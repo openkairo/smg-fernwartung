@@ -239,6 +239,15 @@ async def haupt():
                (await robert.ruf("POST", "/uebernahme/abschluss", json={"token": alter_token}))[0] == 410)
         pruefe("Schließen und erneutes Öffnen der Seite zeigt denselben Stand", (await a.status())["id"] == s["id"])
 
+        print("Techniker beendet")
+        pruefe("Fremder Techniker kann die Sitzung nicht beenden", (await zweiter.ruf("POST", f"/s/{'x' * 43}/ende"))[0] == 410)
+        status, sitzung_e, _ = await robert.uebernehmen(s["id"])
+        pruefe("Techniker beendet die Sitzung", (await robert.ruf("POST", f"/s/{sitzung_e}/ende"))[0] == 200
+               and (await robert.mcp(sitzung_e, "echo", {"wert": 1}))[0] == 410)
+        se = await a.warte_auf(("aus",))
+        pruefe("App zeigt den Abschluss der Wartung", se["zustand"] == "aus" and "abgeschlossen" in se["hinweis"], str(se))
+        s = await a.ein()
+
         print("Sperren")
         status, sitzung_a, _ = await robert.uebernehmen(s["id"])
         status, j, _ = await robert.ruf("POST", "/geraete/SMG-0001/sperren")

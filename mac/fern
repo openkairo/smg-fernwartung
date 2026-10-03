@@ -255,8 +255,21 @@ def chat_speichern(z):
         json.dump(z, f)
 
 
-def chat_ende(leise=False):
+def sitzung_schliessen(k, url):
+    """Sagt dem Dienst, dass der Techniker fertig ist. Die App beim Kunden zeigt dann sofort „aus“."""
+    anfrage = urllib.request.Request(url.rsplit("/", 1)[0] + "/ende", method="POST", data=b"{}",
+                                     headers={"Authorization": "Bearer " + k["techniker_schluessel"],
+                                              "Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(anfrage, timeout=10).read()
+    except Exception:
+        pass
+
+
+def chat_ende(leise=False, k=None):
     z = chat_zustand()
+    if z and k:
+        sitzung_schliessen(k, z["url"])
     if z and z.get("pid"):
         try:
             os.kill(z["pid"], 15)
@@ -270,7 +283,7 @@ def chat_ende(leise=False):
 
 def chat_start(k, fern_id):
     fern_id = acht_ziffern(fern_id)
-    chat_ende(leise=True)
+    chat_ende(leise=True, k=k)
     v = Verbindung(k, abgekoppelt=True)
     j = uebernehmen(v, fern_id)
     os.makedirs(CHAT, mode=0o700)
@@ -384,10 +397,11 @@ def sitzung(k, fern_id):
               f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. Claude startet …")
         befehl, umgebung = claude_befehl(k, mcp_datei, erlaubt)
         subprocess.call(befehl, cwd=arbeit, env=umgebung)
+        sitzung_schliessen(k, f"{v.basis}/s/{j['sitzung']}/mcp")
     finally:
         shutil.rmtree(temp, ignore_errors=True)
         v.schliessen()
-        print("Weiterleitung geschlossen, temporäre Konfiguration gelöscht.")
+        print("Fernwartung beendet: Sitzung geschlossen, temporäre Konfiguration gelöscht.")
 
 
 def haupt():
@@ -408,7 +422,7 @@ def haupt():
     elif a[0] == "status" and len(a) == 1:
         chat_status(k)
     elif a[0] == "ende" and len(a) == 1:
-        chat_ende()
+        chat_ende(k=k)
     elif len(a) <= 2 and "".join(a).replace(" ", "").isdigit():
         sitzung(k, "".join(a))
     else:

@@ -37,6 +37,7 @@ ABLEHNUNG = {
 ENDE = {
     "frist": "Die Zeit ist abgelaufen. Die Fernwartung wurde beendet.",
     "gesperrt": "Die Fernwartung wurde vom Support beendet.",
+    "techniker_beendet": "Die Wartung ist abgeschlossen. Die Fernwartung wurde beendet.",
 }
 
 

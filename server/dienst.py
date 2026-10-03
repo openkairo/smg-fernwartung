@@ -399,6 +399,16 @@ async def weiterleiten(request):
                 pass
 
 
+async def sitzung_beenden(request):
+    """Der Techniker ist fertig: Sitzung sofort schließen, statt sie bis zur Frist offen zu lassen."""
+    z = request.app["zustand"]
+    s = z.sitzungen.get(request.match_info["kennung"])
+    if not s or not s.offen or s.techniker != request["techniker"]:
+        return fehler(410, "Sitzung beendet oder nicht zugeordnet")
+    await z.beenden(s, "techniker_beendet")
+    return web.json_response({"beendet": True})
+
+
 async def geraet_neu(request):
     z = request.app["zustand"]
     try:
@@ -458,6 +468,7 @@ async def starten(db_pfad=DB_PFAD, geraete_port=GERAETE_PORT, techniker_port=TEC
         web.post("/uebernahme/beginn", uebernahme_beginn),
         web.post("/uebernahme/abschluss", uebernahme_abschluss),
         web.route("*", "/s/{kennung}/mcp", weiterleiten),
+        web.post("/s/{kennung}/ende", sitzung_beenden),
         web.post("/geraete", geraet_neu),
         web.get("/geraete", geraete_liste),
         web.post("/geraete/{wert}/sperren", geraet_sperren),
