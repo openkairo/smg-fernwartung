@@ -1,0 +1,23 @@
+services:
+  fern:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    networks:
+      - traefik
+    ports:
+      # Techniker-Seite: nur am Host auf 127.0.0.1, nie über Traefik
+      - "127.0.0.1:8811:8001"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik
+      # Öffentlich ist ausschließlich die Geräte-Seite (Port 8000)
+      - traefik.http.routers.smgfern.rule=Host(`fern.wattrebellen.de`)
+      - traefik.http.routers.smgfern.entrypoints=websecure
+      - traefik.http.routers.smgfern.tls.certresolver=letsencrypt
+      - traefik.http.routers.smgfern.service=smgfern
+      - traefik.http.services.smgfern.loadbalancer.server.port=8000
+networks:
+  traefik:
+    external: true

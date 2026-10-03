@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fernwartung</title>
+<style>
+  :root { --bg:#f4f5f7; --karte:#fff; --text:#1c1e21; --leise:#5f6770; --rand:#d9dde2; --akzent:#0b6e4f; --warn:#a15c00; --stopp:#b3261e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181b; --karte:#22252a; --text:#eceef0; --leise:#a3abb5; --rand:#3a3f46; --akzent:#4cc497; --warn:#f0b35a; --stopp:#f2867f; }
+  }
+  body { margin:0; background:var(--bg); color:var(--text); font:17px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:30rem; margin:0 auto; padding:24px 16px; }
+  .karte { background:var(--karte); border:1px solid var(--rand); border-radius:14px; padding:24px; }
+  h1 { font-size:1.35rem; margin:0 0 4px; }
+  .status { font-weight:600; margin:0 0 16px; }
+  .status.gruen { color:var(--akzent); } .status.gelb { color:var(--warn); }
+  .id { font:700 2.4rem/1.2 ui-monospace, Menlo, monospace; letter-spacing:.06em; margin:8px 0 12px; }
+  p { margin:0 0 12px; } .leise { color:var(--leise); font-size:.95rem; }
+  button { width:100%; border:0; border-radius:10px; padding:14px; font:600 1.05rem inherit; color:#fff; background:var(--akzent); cursor:pointer; margin-top:8px; }
+  button.stopp { background:var(--stopp); }
+  button:disabled { opacity:.5; cursor:default; }
+  @media (prefers-color-scheme: dark) { button { color:#10130f; } }
+</style>
+</head>
+<body>
+<main><div class="karte">
+  <h1>Fernwartung</h1>
+  <p id="status" class="status">…</p>
+  <div id="inhalt"></div>
+  <button id="knopf" hidden></button>
+</div></main>
+<script>
+  var status = document.getElementById('status');
+  var inhalt = document.getElementById('inhalt');
+  var knopf = document.getElementById('knopf');
+  var texte = {
+    aus: 'Fernwartung ist aus',
+    verbindet: 'Verbindung wird hergestellt …',
+    bereit: 'Fernwartung ist bereit',
+    aktiv: 'Fernwartung aktiv',
+    unterbrochen: 'Verbindung unterbrochen'
+  };
+  function absatz(text, klasse) {
+    var p = document.createElement('p');
+    if (klasse) { p.className = klasse; }
+    p.textContent = text;
+    inhalt.appendChild(p);
+  }
+  function zeigen(s) {
+    status.textContent = texte[s.zustand] || s.zustand;
+    status.className = 'status' + (s.zustand === 'bereit' || s.zustand === 'aktiv' ? ' gruen' : s.zustand === 'unterbrochen' ? ' gelb' : '');
+    inhalt.textContent = '';
+    var an = s.zustand === 'bereit' || s.zustand === 'aktiv';
+    if (s.zustand === 'bereit' && s.id) {
+      absatz('Ihre Fernwartungs-ID:');
+      var id = document.createElement('div');
+      id.className = 'id';
+      id.textContent = s.id.slice(0, 4) + ' ' + s.id.slice(4);
+      inhalt.appendChild(id);
+      absatz('Bitte geben Sie diese ID Ihrem Ansprechpartner durch.');
+    }
+    if (s.zustand === 'aktiv') { absatz('Ihr Ansprechpartner arbeitet jetzt an Ihrem System.'); }
+    if (an) { absatz('Endet automatisch in ' + Math.max(1, Math.ceil(s.restzeit / 60)) + ' Minuten.', 'leise'); }
+    if (s.hinweis) { absatz(s.hinweis); }
+    if (s.zustand === 'aus') {
+      absatz('Mit dem Einschalten erlauben Sie unserem Support für höchstens 60 Minuten den Zugriff auf Ihr Home Assistant. Sie können jederzeit beenden.', 'leise');
+    }
+    knopf.hidden = false;
+    knopf.disabled = s.zustand === 'verbindet';
+    knopf.className = an || s.zustand === 'verbindet' ? 'stopp' : '';
+    knopf.textContent = an ? 'Fernwartung beenden' : s.zustand === 'verbindet' ? 'Bitte warten …' : 'Fernwartung einschalten';
+    knopf.onclick = function () { senden(an ? 'api/aus' : 'api/ein'); };
+  }
+  function senden(pfad) {
+    knopf.disabled = true;
+    fetch(pfad, { method: 'POST' }).then(function (r) { return r.json(); }).then(zeigen).catch(function () {});
+  }
+  function laden() {
+    fetch('api/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(zeigen).catch(function () {
+      status.textContent = 'Die App antwortet nicht.';
+    });
+  }
+  laden();
+  setInterval(laden, 2000);
+</script>
+</body>
+</html>

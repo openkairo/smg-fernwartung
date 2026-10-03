@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""fern: Techniker-Werkzeug für die SMG Fernwartung.
+
+  fern <ID>                 Kundensitzung starten (ID aus der App des Kunden)
+  fern neu <Seriennummer>   Gerät in der Werkstatt anlegen, App-Einstellungen ausgeben
+  fern sperren <Gerät>      Gerät sperren (Seriennummer oder Gerätekennung), laufende Sitzung endet sofort
+  fern geraete              Geräteliste
+  fern protokoll            letzte Sitzungen
+  fern einrichten           Konfiguration anlegen und prüfen
+
+Geheime Daten liegen in ~/.config/smg-fern/ (Verzeichnis 700, Dateien 600), nie im Vault.
+"""
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+ORDNER = os.path.expanduser("~/.config/smg-fern")
+KONFIG = os.path.join(ORDNER, "config.json")
+PROFIL = os.path.join(ORDNER, "claude-profil")
+REGELN = os.path.join(os.path.dirname(os.path.realpath(__file__)), "kundensitzung.md")
+VORLAGE = {
+    "ssh_ziel": "root@SERVER",
+    "ssh_schluessel": "~/.ssh/id_ed25519_hostinger",
+    "techniker_port": 8811,
+    "techniker_schluessel": "",
+    "claude": "claude",
+    # "profil": eigenes Claude-Profil über das Abo (einmal anmelden)
+    # "api":    --bare mit API-Schlüssel aus api_schluessel_datei
+    "claude_modus": "profil",
+    "api_schluessel_datei": "",
+}
+
+
+def ende(text, code=1):
+    print(text, file=sys.stderr)
+    sys.exit(code)
+
+
+def konfig_laden():
+    if not os.path.exists(KONFIG):
+        ende("Noch nicht eingerichtet. Bitte zuerst: fern einrichten")
+    if os.stat(ORDNER).st_mode & 0o077 or os.stat(KONFIG).st_mode & 0o077:
+        ende(f"Rechte zu offen. Bitte: chmod 700 {ORDNER} && chmod 600 {KONFIG}")
+    with open(KONFIG) as f:
+        k = {**VORLAGE, **json.load(f)}
+    if not k["techniker_schluessel"]:
+        ende(f"In {KONFIG} fehlt der Techniker-Schlüssel.")
+    return k
+
+
+def einrichten():
+    os.makedirs(ORDNER, mode=0o700, exist_ok=True)
+    os.chmod(ORDNER, 0o700)
+    if not os.path.exists(KONFIG):
+        with open(os.open(KONFIG, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
+            json.dump(VORLAGE, f, indent=2)
+        print(f"Angelegt: {KONFIG}\nBitte ssh_ziel und techniker_schluessel eintragen.")
+    else:
+        os.chmod(KONFIG, 0o600)
+        print(f"Vorhanden: {KONFIG} (Rechte geprüft)")
+    os.makedirs(PROFIL, mode=0o700, exist_ok=True)
+    print(f"Claude-Profil für Kundensitzungen: {PROFIL}\n"
+          f"Einmal anmelden mit:  CLAUDE_CONFIG_DIR='{PROFIL}' claude auth login")
+
+
+def freier_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+class Verbindung:
+    """SSH-Weiterleitung zum Techniker-Port des Dienstes. Ohne sie ist der Dienst nicht erreichbar."""
+
+    def __init__(self, k):
+        self.k = k
+        self.prozess = None
+        if k.get("direkt"):  # nur für lokale Tests
+            self.basis = k["direkt"]
+            return
+        port = freier_port()
+        self.basis = f"http://127.0.0.1:{port}"
+        self.prozess = subprocess.Popen(
+            ["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15",
+             "-i", os.path.expanduser(k["ssh_schluessel"]),
+             "-L", f"127.0.0.1:{port}:127.0.0.1:{k['techniker_port']}", k["ssh_ziel"]],
+            stdin=subprocess.DEVNULL)
+        for _ in range(100):
+            if self.prozess.poll() is not None:
+                ende("SSH-Verbindung zum Server kam nicht zustande.")
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                return
+            except OSError:
+                time.sleep(0.1)
+        self.schliessen()
+        ende("SSH-Verbindung zum Server kam nicht zustande (Zeitüberschreitung).")
+
+    def ruf(self, methode, pfad, daten=None):
+        anfrage = urllib.request.Request(
+            self.basis + pfad, method=methode,
+            data=json.dumps(daten).encode() if daten is not None else None,
+            headers={"Authorization": "Bearer " + self.k["techniker_schluessel"], "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(anfrage, timeout=20) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.load(e)
+            except Exception:
+                return e.code, {}
+
+    def schliessen(self):
+        if self.prozess and self.prozess.poll() is None:
+            self.prozess.terminate()
+            try:
+                self.prozess.wait(3)
+            except subprocess.TimeoutExpired:
+                self.prozess.kill()
+
+
+def verwaltung(k, befehl, argumente):
+    v = Verbindung(k)
+    try:
+        if befehl == "neu":
+            status, j = v.ruf("POST", "/geraete", {"seriennummer": argumente[0]})
+            if status != 200:
+                ende(j.get("fehler", f"Fehler {status}"))
+            print(f"Gerät {j['seriennummer']} angelegt. In die Einstellungen der App „SMG Fernwartung“ eintragen:\n")
+            print(f"geraetekennung: {j['kennung']}")
+            print(f"geraeteschluessel: {j['schluessel']}")
+            print("mcp_url: <Adresse der HA-MCP-App auf diesem Gerät>")
+            print("\nDer Geräteschlüssel wird nur dieses eine Mal angezeigt.")
+        elif befehl == "sperren":
+            status, j = v.ruf("POST", f"/geraete/{argumente[0]}/sperren")
+            if status != 200:
+                ende(j.get("fehler", f"Fehler {status}"))
+            print("Gesperrt." + (" Die laufende Sitzung wurde beendet." if j["sitzung_beendet"] else ""))
+        elif befehl == "geraete":
+            status, j = v.ruf("GET", "/geraete")
+            for g in j:
+                print(f"{g['seriennummer']:<20} {g['kennung']}  "
+                      f"{'gesperrt' if g['gesperrt'] else 'aktiv':<9} {'verbunden' if g['verbunden'] else ''}")
+        elif befehl == "protokoll":
+            status, j = v.ruf("GET", "/protokoll")
+            for p in j:
+                print(f"{p['beginn']}  bis {p['ende'] or 'läuft':<19}  {p['geraet']}  "
+                      f"{p['techniker'] or '-':<10} {p['grund'] or ''}")
+    finally:
+        v.schliessen()
+
+
+def claude_befehl(k, mcp_datei):
+    """Claude Code nur mit dem Kunden-Anschluss: keine eingebauten Werkzeuge, kein eigener Kontext."""
+    befehl = [k["claude"], "--mcp-config", mcp_datei, "--strict-mcp-config", "--tools", "",
+              "--setting-sources", ""]
+    if os.path.exists(REGELN):
+        with open(REGELN) as f:
+            befehl += ["--append-system-prompt", f.read()]
+    umgebung = {n: w for n, w in os.environ.items()
+                if not n.startswith(("CLAUDE", "ANTHROPIC", "MCP_"))}
+    if k["claude_modus"] == "api":
+        with open(os.path.expanduser(k["api_schluessel_datei"])) as f:
+            umgebung["ANTHROPIC_API_KEY"] = f.read().strip()
+        befehl.append("--bare")
+    else:
+        umgebung["CLAUDE_CONFIG_DIR"] = PROFIL
+    return befehl, umgebung
+
+
+def sitzung(k, fern_id):
+    fern_id = "".join(c for c in fern_id if c.isdigit())
+    if len(fern_id) != 8:
+        ende("Die Fernwartungs-ID hat acht Ziffern.")
+    v = Verbindung(k)
+    temp = tempfile.mkdtemp(prefix="smg-fern-")
+    try:
+        status, j = v.ruf("POST", "/uebernahme/beginn", {"id": fern_id})
+        if status != 200:
+            ende(j.get("fehler", f"Fehler {status}"))
+        token = j["token"]
+        for versuch in range(3):  # derselbe Token: Wiederholung liefert dieselbe Sitzung
+            status, j = v.ruf("POST", "/uebernahme/abschluss", {"token": token})
+            if status in (200, 409, 410):
+                break
+            time.sleep(1)
+        if status != 200:
+            ende(j.get("fehler", f"Fehler {status}"))
+        arbeit = os.path.join(temp, "arbeit")
+        os.mkdir(arbeit, 0o700)
+        mcp_datei = os.path.join(temp, "mcp.json")
+        with open(os.open(mcp_datei, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
+            json.dump({"mcpServers": {"kunde": {
+                "type": "http", "url": f"{v.basis}/s/{j['sitzung']}/mcp",
+                "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}}}}, f)
+        print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. Claude startet …")
+        befehl, umgebung = claude_befehl(k, mcp_datei)
+        subprocess.call(befehl, cwd=arbeit, env=umgebung)
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
+        v.schliessen()
+        print("Weiterleitung geschlossen, temporäre Konfiguration gelöscht.")
+
+
+def haupt():
+    a = sys.argv[1:]
+    if not a or a[0] in ("-h", "--help", "hilfe"):
+        ende(__doc__, 0)
+    if a[0] == "einrichten":
+        return einrichten()
+    k = konfig_laden()
+    if a[0] in ("neu", "sperren") and len(a) == 2:
+        verwaltung(k, a[0], a[1:])
+    elif a[0] in ("geraete", "protokoll") and len(a) == 1:
+        verwaltung(k, a[0], [])
+    elif len(a) <= 2 and "".join(a).replace(" ", "").isdigit():
+        sitzung(k, "".join(a))
+    else:
+        ende(__doc__)
+
+
+if __name__ == "__main__":
+    haupt()
