@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.2.0
+- Der MCP-Server ist jetzt eingebaut. Die getrennte App „Home Assistant MCP Server“ wird nicht mehr gebraucht.
+- Er läuft nur, solange die Fernwartung eingeschaltet ist.
+
 ## 0.1.4
 - Fernwartung läuft bis zu 3 Stunden statt 60 Minuten.
 

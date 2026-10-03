@@ -327,7 +327,7 @@ async def haupt():
         print("Fehlerzustände beim Einschalten")
         await mcp_b.cleanup()
         s = await b.ein()
-        pruefe("HA-MCP gestoppt: keine ID, verständliche Meldung", s["zustand"] == "aus" and s["id"] is None and "MCP" in s["hinweis"], str(s))
+        pruefe("HA-MCP gestoppt: keine ID, verständliche Meldung", s["zustand"] == "aus" and s["id"] is None and "interner Dienst" in s["hinweis"], str(s))
         fern_x = fernwartung.Fernwartung({**optionen(ga, P_MCP_A), "dienst_url": "ws://127.0.0.1:1/geraet"})
         fern_x.einschalten()
         await asyncio.sleep(0.5)

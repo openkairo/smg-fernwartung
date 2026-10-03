@@ -1,11 +1,15 @@
 name: SMG Fernwartung
-version: "0.1.4"
+version: "0.2.0"
 slug: smg_fernwartung
 description: Zeitlich begrenzte Fernwartung auf Knopfdruck
 arch:
   - aarch64
   - amd64
 init: false
+# Rechte für den eingebauten HA-MCP-Server (dieselben wie die HA-MCP-App)
+homeassistant_api: true
+hassio_api: true
+hassio_role: manager
 boot: auto
 ingress: true
 ingress_port: 8099
@@ -14,12 +18,10 @@ panel_title: Fernwartung
 options:
   geraetekennung: ""
   geraeteschluessel: ""
-  mcp_url: ""
-  mcp_token: ""
   dienst_url: wss://fern.wattrebellen.de/geraet
 schema:
   geraetekennung: str
   geraeteschluessel: password
-  mcp_url: password
+  mcp_url: password?
   mcp_token: password?
   dienst_url: str
