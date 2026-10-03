@@ -251,7 +251,7 @@ def uebernehmen(v, fern_id):
 
 def dauer(sekunden):
     minuten = max(0, int(sekunden)) // 60
-    return f"{minuten} Minuten" if minuten < 60 else f"{minuten // 60} Std. {minuten % 60} Min."
+    return f"{minuten} Minuten" if minuten < 60 else f"{minuten // 60} Std. {minuten % 60} Min"
 
 
 def acht_ziffern(fern_id):
