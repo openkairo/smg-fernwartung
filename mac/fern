@@ -301,7 +301,8 @@ def chat_start(k, fern_id):
     chat_speichern({"pid": v.prozess.pid if v.prozess else None, "url": url, "claude_sitzung": str(uuid.uuid4()),
                     "erster": True, "ende": time.time() + j["restzeit"], "lesend": lesend, "schreiben": False})
     print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
-          f"{len(lesend)} lesende Werkzeuge laufen ohne Rückfrage, alles Schreibende braucht eine Freigabe.")
+          f"{len(lesend)} lesende Werkzeuge laufen ohne Rückfrage, alles Schreibende braucht eine Freigabe.\n"
+          "Zur Erinnerung: Das Backup macht der Kunde vor der Sitzung selbst.")
 
 
 def chat_lebt(k, z):
@@ -427,7 +428,8 @@ def sitzung(k, fern_id):
                 "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}}}}, f)
         erlaubt = lesende_werkzeuge(k, f"{v.basis}/s/{j['sitzung']}/mcp")
         print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
-              f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. Claude startet …")
+              f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. "
+              "Das Backup macht der Kunde vor der Sitzung selbst. Claude startet …")
         befehl, umgebung = claude_befehl(k, mcp_datei, erlaubt)
         subprocess.call(befehl, cwd=arbeit, env=umgebung)
         sitzung_schliessen(k, f"{v.basis}/s/{j['sitzung']}/mcp")

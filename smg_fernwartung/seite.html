@@ -64,6 +64,7 @@
     if (an) { absatz('Endet automatisch in ' + Math.max(1, Math.ceil(s.restzeit / 60)) + ' Minuten.', 'leise'); }
     if (s.hinweis) { absatz(s.hinweis); }
     if (s.zustand === 'aus') {
+      absatz('Bitte erstellen Sie vor dem Einschalten ein Backup (Einstellungen → System → Sicherungen).');
       absatz('Mit dem Einschalten erlauben Sie unserem Support für höchstens 60 Minuten den Zugriff auf Ihr Home Assistant. Sie können jederzeit beenden.', 'leise');
     }
     knopf.hidden = false;
