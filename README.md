@@ -45,9 +45,10 @@ Kundensitzungen laufen in einem eigenen Claude-Profil ohne eingebaute Werkzeuge 
 
 ## Werkstatt: ein Set einrichten
 
-1. HA OS installieren, Grundeinrichtung. Unter Einstellungen → System → Sicherungen die Sicherungen einrichten: Der Kunde legt vor jeder Fernwartung selbst ein Backup an, die App weist ihn darauf hin.
-2. App-Quellen hinzufügen: `https://github.com/homeassistant-ai/ha-mcp` und `https://github.com/openkairo/smg-fernwartung`.
-3. „Home Assistant MCP Server“ installieren, **Autostart einschalten** (steht nach der Installation auf manuell), starten.
-4. „SMG Fernwartung“ installieren, „In Seitenleiste anzeigen“ einschalten.
-5. `mac/fern neu <Seriennummer>` und die Ausgabe in die Einstellungen der App eintragen. `mcp_url` ist `http://172.30.32.1:9583/` plus der `secret_path` der HA-MCP-App.
-6. App starten, Probelauf: einschalten, `mac/fern <ID>`, ausschalten.
+1. HA OS installieren, Grundeinrichtung.
+2. App-Quelle hinzufügen: `https://github.com/openkairo/smg-fernwartung`.
+3. „SMG Fernwartung“ installieren, „In Seitenleiste anzeigen“ einschalten.
+4. `mac/fern neu <Seriennummer>` und die beiden Werte (Gerätekennung, Geräteschlüssel) in die Einstellungen der App eintragen.
+5. App starten, Probelauf: einschalten, `mac/fern <ID>`, ausschalten.
+
+Der MCP-Server (Paket `ha-mcp`, MIT-Lizenz) ist in die App eingebaut und läuft nur, solange die Fernwartung eingeschaltet ist. Eine getrennte HA-MCP-App wird nicht gebraucht.

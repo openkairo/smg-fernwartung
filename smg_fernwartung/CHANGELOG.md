@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.2.1
+- Nach dem Klick auf „Fernwartung einschalten“ erscheint sofort „Verbindung wird hergestellt“.
+
 ## 0.2.0
 - Der MCP-Server ist jetzt eingebaut. Die getrennte App „Home Assistant MCP Server“ wird nicht mehr gebraucht.
 - Er läuft nur, solange die Fernwartung eingeschaltet ist.

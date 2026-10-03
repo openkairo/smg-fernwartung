@@ -147,7 +147,6 @@ def verwaltung(k, befehl, argumente):
             print(f"Gerät {j['seriennummer']} angelegt. In die Einstellungen der App „SMG Fernwartung“ eintragen:\n")
             print(f"geraetekennung: {j['kennung']}")
             print(f"geraeteschluessel: {j['schluessel']}")
-            print("mcp_url: http://172.30.32.1:9583/<secret_path aus den Einstellungen der HA-MCP-App>")
             print("\nDer Geräteschlüssel wird nur dieses eine Mal angezeigt.")
         elif befehl == "sperren":
             status, j = v.ruf("POST", f"/geraete/{argumente[0]}/sperren")

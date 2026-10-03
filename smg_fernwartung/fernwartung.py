@@ -71,6 +71,7 @@ class Fernwartung:
     def einschalten(self):
         if self.aufgabe and not self.aufgabe.done():
             return
+        self.setze("verbindet")  # sofort sichtbar, nicht erst wenn die Aufgabe anläuft
         self.aufgabe = asyncio.create_task(self.lauf())
 
     async def ausschalten(self):
