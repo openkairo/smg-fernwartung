@@ -15,7 +15,7 @@ async def haupt():
     # Claude-Attrappe: schreibt ihre Aufrufdaten weg
     attrappe = tmp + "/claude"; open(attrappe, "w").write(
         "#!/bin/sh\npwd > %s/cwd\nls -A | wc -l > %s/leer\nenv > %s/env\nfor a in \"$@\"; do echo \"$a\"; done > %s/args\n"
-        "cat \"$2\" > %s/mcp\n" % ((tmp,) * 5)); os.chmod(attrappe, 0o755)
+        "cat \"$2\" > %s/mcp\necho \"$2\" > %s/mcpweg\n" % ((tmp,) * 6)); os.chmod(attrappe, 0o755)
     k = {"direkt": "http://127.0.0.1:18101", "techniker_schluessel": "tk", "claude": attrappe}
     kp = heim + "/.config/smg-fern/config.json"; open(os.open(kp, os.O_WRONLY | os.O_CREAT, 0o600), "w").write(json.dumps(k))
     env = {**os.environ, "HOME": heim, "CLAUDE_GEERBT": "1", "ANTHROPIC_GEERBT": "1"}
@@ -43,7 +43,7 @@ async def haupt():
         pruefe("Arbeitsregeln werden mitgegeben", "--append-system-prompt" in args)
         pruefe("Eigenes Profil gesetzt, geerbte Claude-Umgebung entfernt", "CLAUDE_CONFIG_DIR=" + heim in umg and "GEERBT" not in umg)
         pruefe("Leeres Arbeitsverzeichnis", open(tmp + "/leer").read().strip() == "0")
-        pruefe("Nach Sitzungsende: temporäre Konfiguration gelöscht", not os.path.exists(os.path.dirname(open(tmp + "/cwd").read().strip())))
+        pruefe("Nach Sitzungsende: temporäre Konfiguration gelöscht", not os.path.exists(open(tmp + "/mcpweg").read().strip()))
         code, aus = await fern(s["id"]); pruefe("Zweite Übernahme derselben ID: belegt", code == 1 and "belegt" in aus, aus)
         code, aus = await fern("sperren", "SMG-0100"); pruefe("fern sperren beendet die Sitzung", code == 0 and "beendet" in aus, aus)
         code, aus = await fern("geraete"); pruefe("fern geraete zeigt 'gesperrt'", "gesperrt" in aus, aus)

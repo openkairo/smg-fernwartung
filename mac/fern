@@ -193,7 +193,9 @@ def sitzung(k, fern_id):
             time.sleep(1)
         if status != 200:
             ende(j.get("fehler", f"Fehler {status}"))
-        arbeit = os.path.join(temp, "arbeit")
+        # Festes, leeres Arbeitsverzeichnis: Claude Code fragt die Ordnerfreigabe dann nur beim ersten Mal
+        arbeit = os.path.join(ORDNER, "arbeit")
+        shutil.rmtree(arbeit, ignore_errors=True)
         os.mkdir(arbeit, 0o700)
         mcp_datei = os.path.join(temp, "mcp.json")
         with open(os.open(mcp_datei, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
