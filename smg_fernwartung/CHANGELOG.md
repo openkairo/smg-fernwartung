@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.2.2
+- Verständlicher Hinweis, wenn die Fernwartung wegen Untätigkeit des Technikers beendet wurde.
+- Restzeit ohne doppelten Punkt.
+
 ## 0.2.1
 - Nach dem Klick auf „Fernwartung einschalten“ erscheint sofort „Verbindung wird hergestellt“.
 

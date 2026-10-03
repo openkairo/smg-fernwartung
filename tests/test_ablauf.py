@@ -248,6 +248,24 @@ async def haupt():
         pruefe("App zeigt den Abschluss der Wartung", se["zustand"] == "aus" and "abgeschlossen" in se["hinweis"], str(se))
         s = await a.ein()
 
+        print("Leerlauf des Technikers")
+        dienst.LEERLAUF_S, dienst.PING_S = 1.0, 0.3
+        await a.druecke("aus")
+        s = await a.ein()  # neue Sitzung, damit ihr Wächter den kurzen Takt hat
+        status, sitzung_l, _ = await robert.uebernehmen(s["id"])
+        await asyncio.sleep(0.6)
+        pruefe("Anfragen halten die Sitzung offen", (await robert.mcp(sitzung_l, "echo", {"wert": 1}))[0] == 200)
+        await asyncio.sleep(0.6)
+        pruefe("Kurz danach noch offen", (await robert.mcp(sitzung_l, "echo", {"wert": 1}))[0] == 200)
+        await asyncio.sleep(1.8)
+        pruefe("Ohne Anfragen schließt der Dienst die übernommene Sitzung", (await robert.mcp(sitzung_l, "echo", {"wert": 1}))[0] == 410)
+        sl = await a.warte_auf(("aus",))
+        pruefe("App erklärt das Ende wegen Untätigkeit", sl["zustand"] == "aus" and "nicht mehr gearbeitet" in sl["hinweis"], str(sl))
+        dienst.LEERLAUF_S, dienst.PING_S = 3600, 15
+        s = await a.ein()
+        await asyncio.sleep(1.5)
+        pruefe("Nicht übernommene Sitzung bleibt bereit", (await a.status())["zustand"] == "bereit")
+
         print("Sperren")
         status, sitzung_a, _ = await robert.uebernehmen(s["id"])
         status, j, _ = await robert.ruf("POST", "/geraete/SMG-0001/sperren")

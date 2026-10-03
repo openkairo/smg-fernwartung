@@ -52,7 +52,7 @@
     var stunden = Math.floor(minuten / 60);
     var rest = minuten % 60;
     if (stunden === 0) { return minuten + (minuten === 1 ? ' Minute' : ' Minuten'); }
-    return stunden + (stunden === 1 ? ' Stunde' : ' Stunden') + (rest ? ' ' + rest + ' Min.' : '');
+    return stunden + (stunden === 1 ? ' Stunde' : ' Stunden') + (rest ? ' ' + rest + ' Minuten' : '');
   }
   function zeigen(s) {
     statusZeile.textContent = texte[s.zustand] || s.zustand;

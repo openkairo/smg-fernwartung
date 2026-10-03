@@ -27,7 +27,9 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import signal
 import uuid
 
 ORDNER = os.path.expanduser("~/.config/smg-fern")
@@ -89,7 +91,7 @@ def freier_port():
 class Verbindung:
     """SSH-Weiterleitung zum Techniker-Port des Dienstes. Ohne sie ist der Dienst nicht erreichbar."""
 
-    def __init__(self, k, abgekoppelt=False):
+    def __init__(self, k, abgekoppelt=False, leise=False):
         self.k = k
         self.prozess = None
         if k.get("direkt"):  # nur für lokale Tests
@@ -105,6 +107,9 @@ class Verbindung:
             stdout=subprocess.DEVNULL if abgekoppelt else None, stderr=subprocess.DEVNULL if abgekoppelt else None)
         for _ in range(100):
             if self.prozess.poll() is not None:
+                if leise:
+                    self.prozess = None
+                    return
                 ende("SSH-Verbindung zum Server kam nicht zustande.")
             try:
                 socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
@@ -112,6 +117,9 @@ class Verbindung:
             except OSError:
                 time.sleep(0.1)
         self.schliessen()
+        if leise:
+            self.prozess = None
+            return
         ende("SSH-Verbindung zum Server kam nicht zustande (Zeitüberschreitung).")
 
     def ruf(self, methode, pfad, daten=None):
@@ -276,29 +284,60 @@ def chat_speichern(z):
 
 
 def sitzung_schliessen(k, url):
-    """Sagt dem Dienst, dass der Techniker fertig ist. Die App beim Kunden zeigt dann sofort „aus“."""
-    anfrage = urllib.request.Request(url.rsplit("/", 1)[0] + "/ende", method="POST", data=b"{}",
-                                     headers={"Authorization": "Bearer " + k["techniker_schluessel"],
-                                              "Content-Type": "application/json"})
-    try:
-        urllib.request.urlopen(anfrage, timeout=10).read()
-    except Exception:
-        pass
+    """Sagt dem Dienst, dass der Techniker fertig ist. Die App beim Kunden zeigt dann sofort „aus“.
+
+    Rückgabe: True, wenn die Sitzung im Dienst sicher zu ist (jetzt geschlossen oder schon beendet).
+    Ist die bestehende Weiterleitung tot, wird dafür eine frische aufgebaut.
+    """
+    pfad = urllib.parse.urlsplit(url).path.rsplit("/", 1)[0] + "/ende"
+
+    def versuch(basis):
+        anfrage = urllib.request.Request(basis + pfad, method="POST", data=b"{}",
+                                         headers={"Authorization": "Bearer " + k["techniker_schluessel"],
+                                                  "Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(anfrage, timeout=10).read()
+            return True
+        except urllib.error.HTTPError as e:
+            return e.code == 410  # schon beendet: auch gut
+        except Exception:
+            return None  # Dienst nicht erreicht
+
+    basis = "{0.scheme}://{0.netloc}".format(urllib.parse.urlsplit(url))
+    ergebnis = versuch(basis)
+    if ergebnis is None and not k.get("direkt"):
+        try:
+            v = Verbindung(k, leise=True)
+        except Exception:
+            return False
+        if v.prozess is None:
+            return False
+        try:
+            ergebnis = versuch(v.basis)
+        finally:
+            v.schliessen()
+    return bool(ergebnis)
 
 
 def chat_ende(leise=False, k=None):
     z = chat_zustand()
-    if z and k:
-        sitzung_schliessen(k, z["url"])
+    zu = sitzung_schliessen(k, z["url"]) if z and k else None
     if z and z.get("pid"):
         try:
             os.kill(z["pid"], 15)
         except OSError:
             pass
     shutil.rmtree(CHAT, ignore_errors=True)
-    if not leise:
-        print("Fernwartung beendet: Weiterleitung geschlossen, Sitzungsdaten gelöscht." if z
-              else "Es war keine Fernwartung aktiv.")
+    if leise:
+        return
+    if not z:
+        print("Es war keine Fernwartung aktiv.")
+    elif zu:
+        print("Fernwartung beendet: Sitzung beim Kunden geschlossen (die App dort zeigt „aus“), Sitzungsdaten gelöscht.")
+    else:
+        print("ACHTUNG: Sitzungsdaten auf dem Mac gelöscht, aber der Dienst war nicht erreichbar. "
+              "Beim Kunden läuft die Fernwartung noch, bis er sie beendet, eine Stunde nichts geschieht "
+              "oder die Frist abläuft. Mit „fern protokoll“ prüfen.")
 
 
 def chat_start(k, fern_id):
@@ -322,6 +361,7 @@ def chat_start(k, fern_id):
 
 
 def chat_lebt(k, z):
+    """True: Sitzung lebt. False: im Dienst beendet. None: Dienst über die Weiterleitung nicht erreichbar."""
     anfrage = urllib.request.Request(
         z["url"], method="POST", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}).encode(),
         headers={"Authorization": "Bearer " + k["techniker_schluessel"], "Content-Type": "application/json",
@@ -332,15 +372,30 @@ def chat_lebt(k, z):
     except urllib.error.HTTPError as e:
         return e.code not in (401, 410)
     except Exception:
-        return False
+        return None
 
 
 def chat_aktiv(k):
     z = chat_zustand()
     if not z:
         ende("Keine Fernwartung aktiv. Start mit: fern start <ID>")
-    if time.time() >= z["ende"] or not chat_lebt(k, z):
-        chat_ende(leise=True)
+    lebt = chat_lebt(k, z) if time.time() < z["ende"] else False
+    if lebt is None and not k.get("direkt"):
+        # Die Weiterleitung ist abgerissen (Ruhezustand, Netzwechsel): neu aufbauen statt die Sitzung aufzugeben
+        if z.get("pid"):
+            try:
+                os.kill(z["pid"], 15)
+            except OSError:
+                pass
+        v = Verbindung(k, abgekoppelt=True)
+        z["pid"] = v.prozess.pid
+        z["url"] = v.basis + urllib.parse.urlsplit(z["url"]).path
+        chat_speichern(z)
+        with open(os.open(os.path.join(CHAT, "mcp.json"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            json.dump(mcp_konfig(k, z["url"]), f)
+        lebt = chat_lebt(k, z)
+    if not lebt:
+        chat_ende(leise=True, k=k)
         ende("Die Fernwartung ist beendet (Zeit abgelaufen, vom Kunden ausgeschaltet oder Verbindung verloren). "
              "Für eine neue Sitzung muss der Kunde neu einschalten.")
     return z
@@ -462,7 +517,12 @@ def chat_status(k):
 
 def sitzung(k, fern_id):
     fern_id = acht_ziffern(fern_id)
+    def abbruch(nummer, rahmen):
+        raise SystemExit(1)
+    for s in (signal.SIGHUP, signal.SIGTERM):
+        signal.signal(s, abbruch)
     v = Verbindung(k)
+    url = None
     temp = tempfile.mkdtemp(prefix="smg-fern-")
     try:
         j = uebernehmen(v, fern_id)
@@ -478,12 +538,19 @@ def sitzung(k, fern_id):
               f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. "
               "Das Backup macht der Kunde vor der Sitzung selbst. Claude startet …")
         befehl, umgebung = claude_befehl(k, mcp_datei, erlaubt)
+        url = f"{v.basis}/s/{j['sitzung']}/mcp"
         subprocess.call(befehl, cwd=arbeit, env=umgebung)
-        sitzung_schliessen(k, f"{v.basis}/s/{j['sitzung']}/mcp")
     finally:
+        # Läuft auch, wenn das Terminal geschlossen oder der Prozess beendet wird (siehe Signale unten)
+        zu = sitzung_schliessen(k, url) if url else None
         shutil.rmtree(temp, ignore_errors=True)
         v.schliessen()
-        print("Fernwartung beendet: Sitzung geschlossen, temporäre Konfiguration gelöscht.")
+        try:
+            print("Fernwartung beendet: Sitzung beim Kunden geschlossen, temporäre Konfiguration gelöscht." if zu
+                  else "Temporäre Konfiguration gelöscht." if zu is None
+                  else "ACHTUNG: Dienst nicht erreichbar, beim Kunden läuft die Fernwartung noch. Mit „fern protokoll“ prüfen.")
+        except Exception:
+            pass
 
 
 def haupt():

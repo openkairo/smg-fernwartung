@@ -24,6 +24,8 @@ FRIST_S = float(os.environ.get("FERN_FRIST_S", "10800"))
 PING_S = float(os.environ.get("FERN_PING_S", "15"))
 PING_TIMEOUT_S = float(os.environ.get("FERN_PING_TIMEOUT_S", "45"))
 TOKEN_S = float(os.environ.get("FERN_TOKEN_S", "60"))
+# Übernommene Sitzung ohne jede Anfrage des Technikers: nach dieser Zeit schließen (Mac zu, Chat verlassen)
+LEERLAUF_S = float(os.environ.get("FERN_LEERLAUF_S", "3600"))
 DB_PFAD = os.environ.get("FERN_DB", "data/fern.sqlite3")
 GERAETE_PORT = int(os.environ.get("FERN_GERAETE_PORT", "8000"))
 TECHNIKER_PORT = int(os.environ.get("FERN_TECHNIKER_PORT", "8001"))
@@ -63,6 +65,7 @@ class Sitzung:
         self.frist = None
         self.offen = True
         self.zuletzt = time.monotonic()
+        self.techniker_zuletzt = None
         self.anfragen = {}
         self.naechste_nr = 0
         self.sendesperre = asyncio.Lock()
@@ -173,6 +176,9 @@ class Zustand:
                 return
             if time.monotonic() - s.zuletzt > PING_TIMEOUT_S:
                 await self.beenden(s, "verbindung_verloren")
+                return
+            if s.techniker_zuletzt and not s.anfragen and time.monotonic() - s.techniker_zuletzt > LEERLAUF_S:
+                await self.beenden(s, "techniker_inaktiv")
                 return
             try:
                 await asyncio.wait_for(s.senden({"typ": "ping"}), PING_S)
@@ -331,6 +337,7 @@ async def uebernahme_abschluss(request):
     if s.techniker is None:
         s.techniker = techniker
         s.token = token
+        s.techniker_zuletzt = time.monotonic()
         z.db.execute("UPDATE protokoll SET techniker=? WHERE ref=?", (techniker, s.ref))
         z.db.commit()
         try:
@@ -352,6 +359,7 @@ async def weiterleiten(request):
         return fehler(405, "Methode nicht erlaubt")
     if len(s.anfragen) >= MAX_PARALLEL:
         return fehler(429, "Zu viele gleichzeitige Anfragen")
+    s.techniker_zuletzt = time.monotonic()
     koerper = await request.read()
     nr = s.naechste_nr
     s.naechste_nr += 1
@@ -392,6 +400,7 @@ async def weiterleiten(request):
                 return antwort
     finally:
         s.anfragen.pop(nr, None)
+        s.techniker_zuletzt = time.monotonic()
         if not fertig and s.offen:
             try:
                 await asyncio.shield(s.senden({"typ": "abbruch", "nr": nr}))
