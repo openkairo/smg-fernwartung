@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """fern: Techniker-Werkzeug für die SMG Fernwartung.
 
-  fern <ID>                 Kundensitzung starten (ID aus der App des Kunden)
+  fern <ID>                 Kundensitzung im Terminal starten (ID aus der App des Kunden)
+  fern start <ID>           Kundensitzung für den Chat starten (läuft im Hintergrund weiter)
+  fern frag [--erlaube a,b|alle] <Auftrag>
+                            einen Auftrag an die Chat-Sitzung geben, Antwort ausgeben
+  fern status               Stand der Chat-Sitzung
+  fern ende                 Chat-Sitzung beenden
   fern neu <Seriennummer>   Gerät in der Werkstatt anlegen, App-Einstellungen ausgeben
   fern sperren <Gerät>      Gerät sperren (Seriennummer oder Gerätekennung), laufende Sitzung endet sofort
   fern geraete              Geräteliste
@@ -20,10 +25,12 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 ORDNER = os.path.expanduser("~/.config/smg-fern")
 KONFIG = os.path.join(ORDNER, "config.json")
 PROFIL = os.path.join(ORDNER, "claude-profil")
+CHAT = os.path.join(ORDNER, "chat")
 REGELN = os.path.join(os.path.dirname(os.path.realpath(__file__)), "kundensitzung.md")
 VORLAGE = {
     "ssh_ziel": "root@SERVER",
@@ -79,7 +86,7 @@ def freier_port():
 class Verbindung:
     """SSH-Weiterleitung zum Techniker-Port des Dienstes. Ohne sie ist der Dienst nicht erreichbar."""
 
-    def __init__(self, k):
+    def __init__(self, k, abgekoppelt=False):
         self.k = k
         self.prozess = None
         if k.get("direkt"):  # nur für lokale Tests
@@ -91,7 +98,8 @@ class Verbindung:
             ["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15",
              "-i", os.path.expanduser(k["ssh_schluessel"]),
              "-L", f"127.0.0.1:{port}:127.0.0.1:{k['techniker_port']}", k["ssh_ziel"]],
-            stdin=subprocess.DEVNULL)
+            stdin=subprocess.DEVNULL, start_new_session=abgekoppelt,
+            stdout=subprocess.DEVNULL if abgekoppelt else None, stderr=subprocess.DEVNULL if abgekoppelt else None)
         for _ in range(100):
             if self.prozess.poll() is not None:
                 ende("SSH-Verbindung zum Server kam nicht zustande.")
@@ -184,13 +192,15 @@ def lesende_werkzeuge(k, url):
         return []
 
 
-def claude_befehl(k, mcp_datei, erlaubt=()):
+def claude_befehl(k, mcp_datei, erlaubt=(), alle=False):
     """Claude Code nur mit dem Kunden-Anschluss: keine eingebauten Werkzeuge, kein eigener Kontext."""
     befehl = [k["claude"], "--mcp-config", mcp_datei, "--strict-mcp-config", "--tools", "",
               "--setting-sources", "",
               # Kein Browser des Technikers in der Kundensitzung, und Schreibendes fragt immer nach
               "--no-chrome", "--permission-mode", "manual"]
-    if erlaubt:
+    if alle:
+        befehl += ["--allowedTools", "mcp__kunde"]
+    elif erlaubt:
         befehl += ["--allowedTools", ",".join("mcp__kunde__" + name for name in erlaubt)]
     if os.path.exists(REGELN):
         with open(REGELN) as f:
@@ -206,24 +216,160 @@ def claude_befehl(k, mcp_datei, erlaubt=()):
     return befehl, umgebung
 
 
-def sitzung(k, fern_id):
+def uebernehmen(v, fern_id):
+    status, j = v.ruf("POST", "/uebernahme/beginn", {"id": fern_id})
+    if status != 200:
+        v.schliessen()
+        ende(j.get("fehler", f"Fehler {status}"))
+    token = j["token"]
+    for versuch in range(3):  # derselbe Token: Wiederholung liefert dieselbe Sitzung
+        status, j = v.ruf("POST", "/uebernahme/abschluss", {"token": token})
+        if status in (200, 409, 410):
+            break
+        time.sleep(1)
+    if status != 200:
+        v.schliessen()
+        ende(j.get("fehler", f"Fehler {status}"))
+    return j
+
+
+def acht_ziffern(fern_id):
     fern_id = "".join(c for c in fern_id if c.isdigit())
     if len(fern_id) != 8:
         ende("Die Fernwartungs-ID hat acht Ziffern.")
+    return fern_id
+
+
+# ---------- Chat-Sitzung: Aufträge einzeln hineinreichen, statt Claude im Terminal zu bedienen ----------
+
+def chat_zustand():
+    try:
+        with open(os.path.join(CHAT, "zustand.json")) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def chat_speichern(z):
+    with open(os.open(os.path.join(CHAT, "zustand.json"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump(z, f)
+
+
+def chat_ende(leise=False):
+    z = chat_zustand()
+    if z and z.get("pid"):
+        try:
+            os.kill(z["pid"], 15)
+        except OSError:
+            pass
+    shutil.rmtree(CHAT, ignore_errors=True)
+    if not leise:
+        print("Fernwartung beendet: Weiterleitung geschlossen, Sitzungsdaten gelöscht." if z
+              else "Es war keine Fernwartung aktiv.")
+
+
+def chat_start(k, fern_id):
+    fern_id = acht_ziffern(fern_id)
+    chat_ende(leise=True)
+    v = Verbindung(k, abgekoppelt=True)
+    j = uebernehmen(v, fern_id)
+    os.makedirs(CHAT, mode=0o700)
+    arbeit = os.path.join(ORDNER, "arbeit")
+    shutil.rmtree(arbeit, ignore_errors=True)
+    os.mkdir(arbeit, 0o700)
+    url = f"{v.basis}/s/{j['sitzung']}/mcp"
+    with open(os.open(os.path.join(CHAT, "mcp.json"), os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
+        json.dump({"mcpServers": {"kunde": {
+            "type": "http", "url": url,
+            "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}}}}, f)
+    lesend = lesende_werkzeuge(k, url)
+    chat_speichern({"pid": v.prozess.pid if v.prozess else None, "url": url, "claude_sitzung": str(uuid.uuid4()),
+                    "erster": True, "ende": time.time() + j["restzeit"], "lesend": lesend, "schreiben": False})
+    print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
+          f"{len(lesend)} lesende Werkzeuge laufen ohne Rückfrage, alles Schreibende braucht eine Freigabe.")
+
+
+def chat_lebt(k, z):
+    anfrage = urllib.request.Request(
+        z["url"], method="POST", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}).encode(),
+        headers={"Authorization": "Bearer " + k["techniker_schluessel"], "Content-Type": "application/json",
+                 "Accept": "application/json, text/event-stream"})
+    try:
+        urllib.request.urlopen(anfrage, timeout=20).read()
+        return True
+    except urllib.error.HTTPError as e:
+        return e.code not in (401, 410)
+    except Exception:
+        return False
+
+
+def chat_aktiv(k):
+    z = chat_zustand()
+    if not z:
+        ende("Keine Fernwartung aktiv. Start mit: fern start <ID>")
+    if time.time() >= z["ende"] or not chat_lebt(k, z):
+        chat_ende(leise=True)
+        ende("Die Fernwartung ist beendet (Zeit abgelaufen, vom Kunden ausgeschaltet oder Verbindung verloren). "
+             "Für eine neue Sitzung muss der Kunde neu einschalten.")
+    return z
+
+
+def chat_frag(k, argumente):
+    z = chat_aktiv(k)
+    einmal = []
+    if argumente and argumente[0] == "--erlaube":
+        if len(argumente) < 3:
+            ende("Aufruf: fern frag --erlaube <werkzeug,werkzeug|alle> <Auftrag>")
+        if argumente[1] == "alle":
+            z["schreiben"] = True
+        else:
+            einmal = [w.replace("mcp__kunde__", "") for w in argumente[1].split(",") if w]
+        argumente = argumente[2:]
+    auftrag = " ".join(argumente).strip()
+    if not auftrag:
+        ende("Der Auftrag fehlt.")
+    befehl, umgebung = claude_befehl(k, os.path.join(CHAT, "mcp.json"), z["lesend"] + einmal, alle=z["schreiben"])
+    befehl += ["-p", auftrag, "--output-format", "json",
+               "--session-id" if z["erster"] else "--resume", z["claude_sitzung"]]
+    try:
+        lauf = subprocess.run(befehl, cwd=os.path.join(ORDNER, "arbeit"), env=umgebung, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=max(30, z["ende"] - time.time()))
+    except subprocess.TimeoutExpired:
+        ende("Abgebrochen: Die Sitzungszeit ist während des Auftrags abgelaufen. Stand am Gerät vor dem Weiterarbeiten prüfen.")
+    z["erster"] = False
+    chat_speichern(z)
+    try:
+        antwort = json.loads(lauf.stdout)
+    except Exception:
+        ende("Claude hat nicht geantwortet:\n" + (lauf.stdout + lauf.stderr).strip()[-1500:])
+    print(str(antwort.get("result", "")).strip())
+    abgelehnt = antwort.get("permission_denials") or []
+    if abgelehnt:
+        print("\n--- FREIGABE NÖTIG: Diese Aufrufe wurden nicht ausgeführt ---")
+        gesehen = set()
+        for a in abgelehnt:
+            name = str(a.get("tool_name", "")).replace("mcp__kunde__", "")
+            eingabe = json.dumps(a.get("tool_input", {}), ensure_ascii=False)
+            if (name, eingabe) in gesehen:
+                continue
+            gesehen.add((name, eingabe))
+            print(f"- {name}: {eingabe[:600]}{' …' if len(eingabe) > 600 else ''}")
+        print("Freigeben mit: fern frag --erlaube " + ",".join(sorted({n for n, _ in gesehen})) + ' "Freigegeben, bitte ausführen."')
+    print(f"\n(Fernwartung: noch {max(0, int(z['ende'] - time.time())) // 60} Minuten)")
+
+
+def chat_status(k):
+    z = chat_aktiv(k)
+    print(f"Fernwartung aktiv, noch {max(0, int(z['ende'] - time.time())) // 60} Minuten. "
+          f"Schreiben: {'für die ganze Sitzung freigegeben' if z['schreiben'] else 'nur mit Freigabe je Auftrag'}.")
+
+
+def sitzung(k, fern_id):
+    fern_id = acht_ziffern(fern_id)
     v = Verbindung(k)
     temp = tempfile.mkdtemp(prefix="smg-fern-")
     try:
-        status, j = v.ruf("POST", "/uebernahme/beginn", {"id": fern_id})
-        if status != 200:
-            ende(j.get("fehler", f"Fehler {status}"))
-        token = j["token"]
-        for versuch in range(3):  # derselbe Token: Wiederholung liefert dieselbe Sitzung
-            status, j = v.ruf("POST", "/uebernahme/abschluss", {"token": token})
-            if status in (200, 409, 410):
-                break
-            time.sleep(1)
-        if status != 200:
-            ende(j.get("fehler", f"Fehler {status}"))
+        j = uebernehmen(v, fern_id)
         # Festes, leeres Arbeitsverzeichnis: Claude Code fragt die Ordnerfreigabe dann nur beim ersten Mal
         arbeit = os.path.join(ORDNER, "arbeit")
         shutil.rmtree(arbeit, ignore_errors=True)
@@ -255,6 +401,14 @@ def haupt():
         verwaltung(k, a[0], a[1:])
     elif a[0] in ("geraete", "protokoll") and len(a) == 1:
         verwaltung(k, a[0], [])
+    elif a[0] == "start" and len(a) in (2, 3):
+        chat_start(k, "".join(a[1:]))
+    elif a[0] == "frag":
+        chat_frag(k, a[1:])
+    elif a[0] == "status" and len(a) == 1:
+        chat_status(k)
+    elif a[0] == "ende" and len(a) == 1:
+        chat_ende()
     elif len(a) <= 2 and "".join(a).replace(" ", "").isdigit():
         sitzung(k, "".join(a))
     else:
