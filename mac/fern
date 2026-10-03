@@ -195,16 +195,29 @@ def lesende_werkzeuge(k, url):
         return []
 
 
+BACKUP_WERKZEUG = "mcp__fern__backup_starten"
+
+
+def mcp_konfig(k, url):
+    """Anschlüsse der Kundensitzung: das Home Assistant des Kunden und der Backup-Helfer, sonst nichts."""
+    return {"mcpServers": {
+        "kunde": {"type": "http", "url": url, "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}},
+        "fern": {"type": "stdio", "command": sys.executable,
+                 "args": [os.path.join(os.path.dirname(os.path.realpath(__file__)), "fern_mcp.py")],
+                 "env": {"FERN_URL": url, "FERN_SCHLUESSEL": k["techniker_schluessel"]}}}}
+
+
 def claude_befehl(k, mcp_datei, erlaubt=(), alle=False):
     """Claude Code nur mit dem Kunden-Anschluss: keine eingebauten Werkzeuge, kein eigener Kontext."""
     befehl = [k["claude"], "--mcp-config", mcp_datei, "--strict-mcp-config", "--tools", "",
               "--setting-sources", "",
               # Kein Browser des Technikers in der Kundensitzung, und Schreibendes fragt immer nach
               "--no-chrome", "--permission-mode", "manual"]
+    # Das Backup ohne Passwort darf immer ohne Rückfrage laufen
     if alle:
-        befehl += ["--allowedTools", "mcp__kunde"]
-    elif erlaubt:
-        befehl += ["--allowedTools", ",".join("mcp__kunde__" + name for name in erlaubt)]
+        befehl += ["--allowedTools", "mcp__kunde," + BACKUP_WERKZEUG]
+    else:
+        befehl += ["--allowedTools", ",".join(["mcp__kunde__" + name for name in erlaubt] + [BACKUP_WERKZEUG])]
     if os.path.exists(REGELN):
         with open(REGELN) as f:
             befehl += ["--append-system-prompt", f.read()]
@@ -295,9 +308,7 @@ def chat_start(k, fern_id):
     os.mkdir(arbeit, 0o700)
     url = f"{v.basis}/s/{j['sitzung']}/mcp"
     with open(os.open(os.path.join(CHAT, "mcp.json"), os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
-        json.dump({"mcpServers": {"kunde": {
-            "type": "http", "url": url,
-            "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}}}}, f)
+        json.dump(mcp_konfig(k, url), f)
     lesend = lesende_werkzeuge(k, url)
     chat_speichern({"pid": v.prozess.pid if v.prozess else None, "url": url, "claude_sitzung": str(uuid.uuid4()),
                     "erster": True, "ende": time.time() + j["restzeit"], "lesend": lesend, "schreiben": False})
@@ -457,9 +468,7 @@ def sitzung(k, fern_id):
         os.mkdir(arbeit, 0o700)
         mcp_datei = os.path.join(temp, "mcp.json")
         with open(os.open(mcp_datei, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
-            json.dump({"mcpServers": {"kunde": {
-                "type": "http", "url": f"{v.basis}/s/{j['sitzung']}/mcp",
-                "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}}}}, f)
+            json.dump(mcp_konfig(k, f"{v.basis}/s/{j['sitzung']}/mcp"), f)
         erlaubt = lesende_werkzeuge(k, f"{v.basis}/s/{j['sitzung']}/mcp")
         print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
               f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. "
