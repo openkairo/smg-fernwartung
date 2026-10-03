@@ -187,7 +187,9 @@ def lesende_werkzeuge(k, url):
 def claude_befehl(k, mcp_datei, erlaubt=()):
     """Claude Code nur mit dem Kunden-Anschluss: keine eingebauten Werkzeuge, kein eigener Kontext."""
     befehl = [k["claude"], "--mcp-config", mcp_datei, "--strict-mcp-config", "--tools", "",
-              "--setting-sources", ""]
+              "--setting-sources", "",
+              # Kein Browser des Technikers in der Kundensitzung, und Schreibendes fragt immer nach
+              "--no-chrome", "--permission-mode", "manual"]
     if erlaubt:
         befehl += ["--allowedTools", ",".join("mcp__kunde__" + name for name in erlaubt)]
     if os.path.exists(REGELN):

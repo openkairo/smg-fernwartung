@@ -40,6 +40,7 @@ async def haupt():
         args = open(tmp + "/args").read().split("\n"); mcp = json.load(open(tmp + "/mcp")); umg = open(tmp + "/env").read()
         pruefe("Claude bekommt nur den Kunden-Anschluss", list(mcp["mcpServers"]) == ["kunde"] and "--strict-mcp-config" in args)
         pruefe("Ohne Auskunft des Servers wird nichts vorab erlaubt", "--allowedTools" not in args)
+        pruefe("Browser-Werkzeuge aus, Rückfragen an", "--no-chrome" in args and args[args.index("--permission-mode") + 1] == "manual")
         pruefe("Eingebaute Werkzeuge abgeschaltet", args[args.index("--tools") + 1] == "")
         pruefe("Arbeitsregeln werden mitgegeben", "--append-system-prompt" in args)
         pruefe("Eigenes Profil gesetzt, geerbte Claude-Umgebung entfernt", "CLAUDE_CONFIG_DIR=" + heim in umg and "GEERBT" not in umg)
