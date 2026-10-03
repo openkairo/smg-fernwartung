@@ -32,7 +32,7 @@ import urllib.request
 import signal
 import uuid
 
-ORDNER = os.path.expanduser("~/.config/smg-fern")
+ORDNER = os.environ.get("FERN_ORDNER") or os.path.expanduser("~/.config/smg-fern")
 KONFIG = os.path.join(ORDNER, "config.json")
 PROFIL = os.path.join(ORDNER, "claude-profil")
 CHAT = os.path.join(ORDNER, "chat")
@@ -526,6 +526,7 @@ def sitzung(k, fern_id):
     temp = tempfile.mkdtemp(prefix="smg-fern-")
     try:
         j = uebernehmen(v, fern_id)
+        url = f"{v.basis}/s/{j['sitzung']}/mcp"  # ab hier gehört die Sitzung uns: beim Ende immer schließen
         # Festes, leeres Arbeitsverzeichnis: Claude Code fragt die Ordnerfreigabe dann nur beim ersten Mal
         arbeit = os.path.join(ORDNER, "arbeit")
         shutil.rmtree(arbeit, ignore_errors=True)
@@ -538,10 +539,12 @@ def sitzung(k, fern_id):
               f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. "
               "Das Backup macht der Kunde vor der Sitzung selbst. Claude startet …")
         befehl, umgebung = claude_befehl(k, mcp_datei, erlaubt)
-        url = f"{v.basis}/s/{j['sitzung']}/mcp"
         subprocess.call(befehl, cwd=arbeit, env=umgebung)
     finally:
-        # Läuft auch, wenn das Terminal geschlossen oder der Prozess beendet wird (siehe Signale unten)
+        # Läuft auch, wenn das Terminal geschlossen oder der Prozess beendet wird. Weitere Signale
+        # dürfen das Aufräumen nicht mehr unterbrechen.
+        for s in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+            signal.signal(s, signal.SIG_IGN)
         zu = sitzung_schliessen(k, url) if url else None
         shutil.rmtree(temp, ignore_errors=True)
         v.schliessen()
