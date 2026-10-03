@@ -39,6 +39,7 @@ async def haupt():
         pruefe("App zeigt 'aktiv'", (await app.status())["zustand"] == "aktiv")
         args = open(tmp + "/args").read().split("\n"); mcp = json.load(open(tmp + "/mcp")); umg = open(tmp + "/env").read()
         pruefe("Claude bekommt nur den Kunden-Anschluss", list(mcp["mcpServers"]) == ["kunde"] and "--strict-mcp-config" in args)
+        pruefe("Ohne Auskunft des Servers wird nichts vorab erlaubt", "--allowedTools" not in args)
         pruefe("Eingebaute Werkzeuge abgeschaltet", args[args.index("--tools") + 1] == "")
         pruefe("Arbeitsregeln werden mitgegeben", "--append-system-prompt" in args)
         pruefe("Eigenes Profil gesetzt, geerbte Claude-Umgebung entfernt", "CLAUDE_CONFIG_DIR=" + heim in umg and "GEERBT" not in umg)

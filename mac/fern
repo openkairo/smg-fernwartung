@@ -157,10 +157,39 @@ def verwaltung(k, befehl, argumente):
         v.schliessen()
 
 
-def claude_befehl(k, mcp_datei):
+# Auch wenn der Server sie als lesend kennzeichnet: Kamerabilder und Meldungen nach außen nur mit Rückfrage
+IMMER_FRAGEN = ("ha_get_camera_image", "ha_report_issue")
+
+
+def lesende_werkzeuge(k, url):
+    """Fragt den MCP-Server des Kunden, welche Werkzeuge nur lesen. Die dürfen ohne Rückfrage laufen."""
+    def ruf(methode, nr, parameter=None):
+        anfrage = urllib.request.Request(
+            url, method="POST",
+            data=json.dumps({"jsonrpc": "2.0", "id": nr, "method": methode, "params": parameter or {}}).encode(),
+            headers={"Authorization": "Bearer " + k["techniker_schluessel"], "Content-Type": "application/json",
+                     "Accept": "application/json, text/event-stream"})
+        with urllib.request.urlopen(anfrage, timeout=30) as r:
+            text = r.read().decode()
+            sitzung = r.headers.get("Mcp-Session-Id")
+        daten = [z[5:].strip() for z in text.splitlines() if z.startswith("data:")]
+        return json.loads(daten[-1] if daten else text), sitzung
+    try:
+        ruf("initialize", 1, {"protocolVersion": "2025-06-18", "capabilities": {},
+                              "clientInfo": {"name": "fern", "version": "1"}})
+        antwort, _ = ruf("tools/list", 2)
+        return sorted(w["name"] for w in antwort["result"]["tools"]
+                      if (w.get("annotations") or {}).get("readOnlyHint") and w["name"] not in IMMER_FRAGEN)
+    except Exception:
+        return []
+
+
+def claude_befehl(k, mcp_datei, erlaubt=()):
     """Claude Code nur mit dem Kunden-Anschluss: keine eingebauten Werkzeuge, kein eigener Kontext."""
     befehl = [k["claude"], "--mcp-config", mcp_datei, "--strict-mcp-config", "--tools", "",
               "--setting-sources", ""]
+    if erlaubt:
+        befehl += ["--allowedTools", ",".join("mcp__kunde__" + name for name in erlaubt)]
     if os.path.exists(REGELN):
         with open(REGELN) as f:
             befehl += ["--append-system-prompt", f.read()]
@@ -202,8 +231,10 @@ def sitzung(k, fern_id):
             json.dump({"mcpServers": {"kunde": {
                 "type": "http", "url": f"{v.basis}/s/{j['sitzung']}/mcp",
                 "headers": {"Authorization": "Bearer " + k["techniker_schluessel"]}}}}, f)
-        print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. Claude startet …")
-        befehl, umgebung = claude_befehl(k, mcp_datei)
+        erlaubt = lesende_werkzeuge(k, f"{v.basis}/s/{j['sitzung']}/mcp")
+        print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
+              f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. Claude startet …")
+        befehl, umgebung = claude_befehl(k, mcp_datei, erlaubt)
         subprocess.call(befehl, cwd=arbeit, env=umgebung)
     finally:
         shutil.rmtree(temp, ignore_errors=True)
