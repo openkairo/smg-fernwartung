@@ -1,5 +1,5 @@
 name: SMG Fernwartung
-version: "0.1.3"
+version: "0.1.4"
 slug: smg_fernwartung
 description: Zeitlich begrenzte Fernwartung auf Knopfdruck
 arch:

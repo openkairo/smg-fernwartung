@@ -165,7 +165,7 @@ async def haupt():
         s = await a.ein()
         id1 = s["id"]
         pruefe("Einschalten liefert achtstellige ID", s["zustand"] == "bereit" and len(id1) == 8 and id1.isdigit(), str(s))
-        pruefe("Restzeit läuft", 3590 <= s["restzeit"] <= 3600, str(s["restzeit"]))
+        pruefe("Restzeit läuft", 10790 <= s["restzeit"] <= 10800, str(s["restzeit"]))
 
         status, j, _ = await robert.ruf("POST", "/uebernahme/beginn", json={"id": id1})
         token1 = j["token"]
@@ -279,7 +279,7 @@ async def haupt():
         pruefe("Dienst beendet zur Frist von sich aus", m == {"typ": "ende", "grund": "frist"}, str(m))
         await ws.close()
         await asyncio.sleep(0.2)
-        dienst.FRIST_S = 3600
+        dienst.FRIST_S = 10800
         fernwartung.FRIST_S = 1.5
         s = await b.ein()
         id_b = s["id"]
@@ -288,7 +288,7 @@ async def haupt():
         pruefe("Eigene Frist der App beendet unabhängig vom Dienst", s["zustand"] == "aus" and "Zeit" in s["hinweis"], str(s))
         await asyncio.sleep(0.2)
         pruefe("Danach ist die ID im Dienst ungültig", (await zweiter.ruf("POST", "/uebernahme/beginn", json={"id": id_b}))[0] == 404)
-        fernwartung.FRIST_S = 3600
+        fernwartung.FRIST_S = 10800
 
         dienst.PING_S, dienst.PING_TIMEOUT_S = 0.2, 0.8
         ws = await http.ws_connect(f"ws://127.0.0.1:{P_GERAETE}/geraet")  # Gerät, das nach der Anmeldung verstummt

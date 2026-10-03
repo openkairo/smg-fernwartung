@@ -20,7 +20,7 @@ import time
 
 from aiohttp import WSMsgType, web
 
-FRIST_S = float(os.environ.get("FERN_FRIST_S", "3600"))
+FRIST_S = float(os.environ.get("FERN_FRIST_S", "10800"))
 PING_S = float(os.environ.get("FERN_PING_S", "15"))
 PING_TIMEOUT_S = float(os.environ.get("FERN_PING_TIMEOUT_S", "45"))
 TOKEN_S = float(os.environ.get("FERN_TOKEN_S", "60"))

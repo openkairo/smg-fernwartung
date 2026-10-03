@@ -15,7 +15,7 @@ import aiohttp
 from aiohttp import WSMsgType, web
 
 OPTIONEN_PFAD = os.environ.get("FERN_OPTIONEN", "/data/options.json")
-FRIST_S = float(os.environ.get("FERN_FRIST_S", "3600"))
+FRIST_S = float(os.environ.get("FERN_FRIST_S", "10800"))
 PING_TIMEOUT_S = float(os.environ.get("FERN_PING_TIMEOUT_S", "45"))
 PORT = int(os.environ.get("FERN_APP_PORT", "8099"))
 INGRESS_PROXY = "172.30.32.2"

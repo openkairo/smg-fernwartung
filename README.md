@@ -1,6 +1,6 @@
 # SMG Fernwartung
 
-Zeitlich begrenzte Fernwartung für Home-Assistant-Sets: Der Kunde drückt „Fernwartung einschalten“, nennt die angezeigte ID, und Claude arbeitet über MCP auf seinem System. Nach 60 Minuten oder per Knopf ist der Zugang zu.
+Zeitlich begrenzte Fernwartung für Home-Assistant-Sets: Der Kunde drückt „Fernwartung einschalten“, nennt die angezeigte ID, und Claude arbeitet über MCP auf seinem System. Nach 3 Stunden oder per Knopf ist der Zugang zu.
 
 ```
 Kunden-HA: App „SMG Fernwartung“  --wss, ausgehend-->  Dienst (VPS)  <--SSH--  Mac: fern + Claude Code

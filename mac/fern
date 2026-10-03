@@ -249,6 +249,11 @@ def uebernehmen(v, fern_id):
     return j
 
 
+def dauer(sekunden):
+    minuten = max(0, int(sekunden)) // 60
+    return f"{minuten} Minuten" if minuten < 60 else f"{minuten // 60} Std. {minuten % 60} Min."
+
+
 def acht_ziffern(fern_id):
     fern_id = "".join(c for c in fern_id if c.isdigit())
     if len(fern_id) != 8:
@@ -312,7 +317,7 @@ def chat_start(k, fern_id):
     lesend = lesende_werkzeuge(k, url)
     chat_speichern({"pid": v.prozess.pid if v.prozess else None, "url": url, "claude_sitzung": str(uuid.uuid4()),
                     "erster": True, "ende": time.time() + j["restzeit"], "lesend": lesend, "schreiben": False})
-    print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
+    print(f"Sitzung übernommen, noch {dauer(j['restzeit'])}. "
           f"{len(lesend)} lesende Werkzeuge laufen ohne Rückfrage, alles Schreibende braucht eine Freigabe.\n"
           "Zur Erinnerung: Das Backup macht der Kunde vor der Sitzung selbst.")
 
@@ -414,7 +419,7 @@ def chat_frag(k, argumente):
             gesehen.add((name, eingabe))
             print(f"- {name}: {eingabe[:600]}{' …' if len(eingabe) > 600 else ''}")
         print("Freigeben mit: fern frag --erlaube " + ",".join(sorted({n for n, _ in gesehen})) + ' "Freigegeben, bitte ausführen."')
-    print(f"\n(Fernwartung: noch {max(0, int(z['ende'] - time.time())) // 60} Minuten)")
+    print(f"\n(Fernwartung: noch {dauer(z['ende'] - time.time())})")
 
 
 def chat_backup(k):
@@ -452,7 +457,7 @@ def chat_backup(k):
 
 def chat_status(k):
     z = chat_aktiv(k)
-    print(f"Fernwartung aktiv, noch {max(0, int(z['ende'] - time.time())) // 60} Minuten. "
+    print(f"Fernwartung aktiv, noch {dauer(z['ende'] - time.time())}. "
           f"Schreiben: {'für die ganze Sitzung freigegeben' if z['schreiben'] else 'nur mit Freigabe je Auftrag'}.")
 
 
@@ -470,7 +475,7 @@ def sitzung(k, fern_id):
         with open(os.open(mcp_datei, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
             json.dump(mcp_konfig(k, f"{v.basis}/s/{j['sitzung']}/mcp"), f)
         erlaubt = lesende_werkzeuge(k, f"{v.basis}/s/{j['sitzung']}/mcp")
-        print(f"Sitzung übernommen, noch {j['restzeit'] // 60} Minuten. "
+        print(f"Sitzung übernommen, noch {dauer(j['restzeit'])}. "
               f"{len(erlaubt)} lesende Werkzeuge laufen ohne Rückfrage. "
               "Das Backup macht der Kunde vor der Sitzung selbst. Claude startet …")
         befehl, umgebung = claude_befehl(k, mcp_datei, erlaubt)

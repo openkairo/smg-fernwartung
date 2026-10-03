@@ -47,6 +47,13 @@
     p.textContent = text;
     inhalt.appendChild(p);
   }
+  function dauer(sekunden) {
+    var minuten = Math.max(1, Math.ceil(sekunden / 60));
+    var stunden = Math.floor(minuten / 60);
+    var rest = minuten % 60;
+    if (stunden === 0) { return minuten + (minuten === 1 ? ' Minute' : ' Minuten'); }
+    return stunden + (stunden === 1 ? ' Stunde' : ' Stunden') + (rest ? ' ' + rest + ' Min.' : '');
+  }
   function zeigen(s) {
     statusZeile.textContent = texte[s.zustand] || s.zustand;
     statusZeile.className = 'status' + (s.zustand === 'bereit' || s.zustand === 'aktiv' ? ' gruen' : s.zustand === 'unterbrochen' ? ' gelb' : '');
@@ -61,11 +68,11 @@
       absatz('Bitte geben Sie diese ID Ihrem Techniker durch.');
     }
     if (s.zustand === 'aktiv') { absatz('Ihr Techniker arbeitet jetzt an Ihrem System.'); }
-    if (an) { absatz('Endet automatisch in ' + Math.max(1, Math.ceil(s.restzeit / 60)) + ' Minuten.', 'leise'); }
+    if (an) { absatz('Endet automatisch in ' + dauer(s.restzeit) + '.', 'leise'); }
     if (s.hinweis) { absatz(s.hinweis); }
     if (s.zustand === 'aus') {
       absatz('Bitte erstellen Sie vor dem Einschalten ein Backup (Einstellungen → System → Sicherungen).');
-      absatz('Mit dem Einschalten erlauben Sie unserem Support für höchstens 60 Minuten den Zugriff auf Ihr Home Assistant. Sie können jederzeit beenden.', 'leise');
+      absatz('Mit dem Einschalten erlauben Sie unserem Support für höchstens 3 Stunden den Zugriff auf Ihr Home Assistant. Sie können jederzeit beenden.', 'leise');
     }
     knopf.hidden = false;
     knopf.disabled = s.zustand === 'verbindet';
