@@ -3,7 +3,7 @@
 
   fern <ID>                 Kundensitzung im Terminal starten (ID aus der App des Kunden)
   fern start <ID>           Kundensitzung für den Chat starten (läuft im Hintergrund weiter)
-  fern frag [--erlaube a,b|alle] <Auftrag>
+  fern frag [--erlaube a,b|alle] [--bild <Datei>]... <Auftrag>
                             einen Auftrag an die Chat-Sitzung geben, Antwort ausgeben
   fern status               Stand der Chat-Sitzung
   fern ende                 Chat-Sitzung beenden
@@ -15,7 +15,9 @@
 
 Geheime Daten liegen in ~/.config/smg-fern/ (Verzeichnis 700, Dateien 600), nie im Vault.
 """
+import base64
 import json
+import mimetypes
 import os
 import shutil
 import socket
@@ -327,13 +329,35 @@ def chat_aktiv(k):
     return z
 
 
+def bild_block(pfad):
+    """Bild als Anhang für Claude; große Bilder werden vorher verkleinert."""
+    pfad = os.path.expanduser(pfad)
+    if not os.path.isfile(pfad):
+        ende(f"Bild nicht gefunden: {pfad}")
+    art = mimetypes.guess_type(pfad)[0] or ""
+    quelle = pfad
+    if art not in ("image/png", "image/jpeg", "image/gif", "image/webp") or os.path.getsize(pfad) > 3_000_000:
+        quelle = os.path.join(CHAT, "bild-%d.jpg" % time.time_ns())
+        if subprocess.run(["sips", "-s", "format", "jpeg", "-Z", "2000", pfad, "--out", quelle],
+                          capture_output=True).returncode != 0:
+            ende(f"Bild lässt sich nicht lesen: {pfad}")
+        art = "image/jpeg"
+    with open(quelle, "rb") as f:
+        daten = base64.b64encode(f.read()).decode()
+    if quelle != pfad:
+        os.remove(quelle)
+    return {"type": "image", "source": {"type": "base64", "media_type": art, "data": daten}}
+
+
 def chat_frag(k, argumente):
     z = chat_aktiv(k)
-    einmal = []
-    if argumente and argumente[0] == "--erlaube":
+    einmal, bilder = [], []
+    while argumente and argumente[0] in ("--erlaube", "--bild"):
         if len(argumente) < 3:
-            ende("Aufruf: fern frag --erlaube <werkzeug,werkzeug|alle> <Auftrag>")
-        if argumente[1] == "alle":
+            ende("Aufruf: fern frag [--erlaube <werkzeug,werkzeug|alle>] [--bild <Datei>]... <Auftrag>")
+        if argumente[0] == "--bild":
+            bilder.append(bild_block(argumente[1]))
+        elif argumente[1] == "alle":
             z["schreiben"] = True
         else:
             einmal = [w.replace("mcp__kunde__", "") for w in argumente[1].split(",") if w]
@@ -342,18 +366,27 @@ def chat_frag(k, argumente):
     if not auftrag:
         ende("Der Auftrag fehlt.")
     befehl, umgebung = claude_befehl(k, os.path.join(CHAT, "mcp.json"), z["lesend"] + einmal, alle=z["schreiben"])
-    befehl += ["-p", auftrag, "--output-format", "json",
+    # Der Auftrag geht als Nachricht über die Standardeingabe hinein, damit Bilder mitkönnen
+    befehl += ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
                "--session-id" if z["erster"] else "--resume", z["claude_sitzung"]]
+    nachricht = json.dumps({"type": "user", "message": {"role": "user",
+                            "content": bilder + [{"type": "text", "text": auftrag}]}}) + "\n"
     try:
-        lauf = subprocess.run(befehl, cwd=os.path.join(ORDNER, "arbeit"), env=umgebung, stdin=subprocess.DEVNULL,
+        lauf = subprocess.run(befehl, cwd=os.path.join(ORDNER, "arbeit"), env=umgebung, input=nachricht,
                               capture_output=True, text=True, timeout=max(30, z["ende"] - time.time()))
     except subprocess.TimeoutExpired:
         ende("Abgebrochen: Die Sitzungszeit ist während des Auftrags abgelaufen. Stand am Gerät vor dem Weiterarbeiten prüfen.")
     z["erster"] = False
     chat_speichern(z)
-    try:
-        antwort = json.loads(lauf.stdout)
-    except Exception:
+    antwort = None
+    for zeile in lauf.stdout.splitlines():
+        try:
+            m = json.loads(zeile)
+        except Exception:
+            continue
+        if m.get("type") == "result":
+            antwort = m
+    if antwort is None:
         ende("Claude hat nicht geantwortet:\n" + (lauf.stdout + lauf.stderr).strip()[-1500:])
     print(str(antwort.get("result", "")).strip())
     abgelehnt = antwort.get("permission_denials") or []
