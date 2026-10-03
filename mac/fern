@@ -5,6 +5,7 @@
   fern start <ID>           Kundensitzung für den Chat starten (läuft im Hintergrund weiter)
   fern frag [--erlaube a,b|alle] [--bild <Datei>]... <Auftrag>
                             einen Auftrag an die Chat-Sitzung geben, Antwort ausgeben
+  fern backup               vollständiges Backup auf dem Kundengerät starten (ohne Backup-Passwort)
   fern status               Stand der Chat-Sitzung
   fern ende                 Chat-Sitzung beenden
   fern neu <Seriennummer>   Gerät in der Werkstatt anlegen, App-Einstellungen ausgeben
@@ -405,6 +406,39 @@ def chat_frag(k, argumente):
     print(f"\n(Fernwartung: noch {max(0, int(z['ende'] - time.time())) // 60} Minuten)")
 
 
+def chat_backup(k):
+    """Startet ein vollständiges Backup über den Home-Assistant-Dienst hassio.backup_full.
+
+    Der braucht kein Backup-Passwort (das Backup ist dann unverschlüsselt). Läuft ohne Claude,
+    direkt als Werkzeugaufruf über die Weiterleitung.
+    """
+    z = chat_aktiv(k)
+    name = "Fernwartung " + time.strftime("%Y-%m-%d %H:%M")
+
+    def ruf(nr, methode, parameter):
+        anfrage = urllib.request.Request(
+            z["url"], method="POST",
+            data=json.dumps({"jsonrpc": "2.0", "id": nr, "method": methode, "params": parameter}).encode(),
+            headers={"Authorization": "Bearer " + k["techniker_schluessel"], "Content-Type": "application/json",
+                     "Accept": "application/json, text/event-stream"})
+        with urllib.request.urlopen(anfrage, timeout=900) as r:
+            text = r.read().decode()
+        daten = [zeile[5:].strip() for zeile in text.splitlines() if zeile.startswith("data:")]
+        return json.loads(daten[-1] if daten else text)
+    try:
+        ruf(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                              "clientInfo": {"name": "fern", "version": "1"}})
+        antwort = ruf(2, "tools/call", {"name": "ha_call_service", "arguments": {
+            "domain": "hassio", "service": "backup_full", "data": {"name": name}}})
+    except Exception as e:
+        ende(f"Backup nicht gestartet: {type(e).__name__}. Stand am Gerät prüfen, nicht blind wiederholen.")
+    ergebnis = antwort.get("result", {})
+    text = " ".join(c.get("text", "") for c in ergebnis.get("content", []) if c.get("type") == "text")
+    if "error" in antwort or ergebnis.get("isError"):
+        ende("Backup fehlgeschlagen: " + (text or json.dumps(antwort.get("error"), ensure_ascii=False))[:600])
+    print(f"Backup „{name}“ ist angelegt (vollständig, unverschlüsselt, ohne Passwort).")
+
+
 def chat_status(k):
     z = chat_aktiv(k)
     print(f"Fernwartung aktiv, noch {max(0, int(z['ende'] - time.time())) // 60} Minuten. "
@@ -454,6 +488,8 @@ def haupt():
         chat_start(k, "".join(a[1:]))
     elif a[0] == "frag":
         chat_frag(k, a[1:])
+    elif a[0] == "backup" and len(a) == 1:
+        chat_backup(k)
     elif a[0] == "status" and len(a) == 1:
         chat_status(k)
     elif a[0] == "ende" and len(a) == 1:
