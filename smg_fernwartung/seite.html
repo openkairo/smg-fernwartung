@@ -31,7 +31,7 @@
   <button id="knopf" hidden></button>
 </div></main>
 <script>
-  var status = document.getElementById('status');
+  var statusZeile = document.getElementById('status');
   var inhalt = document.getElementById('inhalt');
   var knopf = document.getElementById('knopf');
   var texte = {
@@ -48,8 +48,8 @@
     inhalt.appendChild(p);
   }
   function zeigen(s) {
-    status.textContent = texte[s.zustand] || s.zustand;
-    status.className = 'status' + (s.zustand === 'bereit' || s.zustand === 'aktiv' ? ' gruen' : s.zustand === 'unterbrochen' ? ' gelb' : '');
+    statusZeile.textContent = texte[s.zustand] || s.zustand;
+    statusZeile.className = 'status' + (s.zustand === 'bereit' || s.zustand === 'aktiv' ? ' gruen' : s.zustand === 'unterbrochen' ? ' gelb' : '');
     inhalt.textContent = '';
     var an = s.zustand === 'bereit' || s.zustand === 'aktiv';
     if (s.zustand === 'bereit' && s.id) {
@@ -58,9 +58,9 @@
       id.className = 'id';
       id.textContent = s.id.slice(0, 4) + ' ' + s.id.slice(4);
       inhalt.appendChild(id);
-      absatz('Bitte geben Sie diese ID Ihrem Ansprechpartner durch.');
+      absatz('Bitte geben Sie diese ID Ihrem Techniker durch.');
     }
-    if (s.zustand === 'aktiv') { absatz('Ihr Ansprechpartner arbeitet jetzt an Ihrem System.'); }
+    if (s.zustand === 'aktiv') { absatz('Ihr Techniker arbeitet jetzt an Ihrem System.'); }
     if (an) { absatz('Endet automatisch in ' + Math.max(1, Math.ceil(s.restzeit / 60)) + ' Minuten.', 'leise'); }
     if (s.hinweis) { absatz(s.hinweis); }
     if (s.zustand === 'aus') {
@@ -78,7 +78,7 @@
   }
   function laden() {
     fetch('api/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(zeigen).catch(function () {
-      status.textContent = 'Die App antwortet nicht.';
+      statusZeile.textContent = 'Die App antwortet nicht.';
     });
   }
   laden();
