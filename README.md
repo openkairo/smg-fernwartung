@@ -33,15 +33,37 @@ docker compose exec fern python dienst.py techniker-neu robert   # gibt den Tech
 
 Öffentlich ist nur `wss://fern.wattrebellen.de/geraet`. Die Techniker-Seite liegt am Host auf `127.0.0.1:8811` und verlangt bei jeder Anfrage den Techniker-Schlüssel.
 
-## Mac
+## Techniker: Einrichtung auf dem eigenen Mac
 
-```bash
-fern einrichten     # legt ~/.config/smg-fern/ an (700/600)
-fern neu SMG-0001   # Werkstatt: Gerät anlegen
-fern 5832 7194      # Kundensitzung
+In Claude Code (Terminal oder Desktop-App):
+
+```
+/plugin marketplace add openkairo/smg-fernwartung
+/plugin install fern@smg-fernwartung
 ```
 
+Danach im Chat `/fern einrichten`. Das erzeugt einen SSH-Schlüssel und zeigt dessen öffentlichen Teil. Den an Robert schicken; er schaltet ihn frei und gibt einen Techniker-Schlüssel zurück. Im Terminal:
+
+```bash
+fern schluessel     # Techniker-Schlüssel eintragen, wird verdeckt abgefragt
+```
+
+Zuletzt das Claude-Profil für Kundensitzungen anmelden; den Befehl nennt `/fern einrichten`.
+
+Benutzung: Der Kunde schaltet die Fernwartung ein und nennt die ID. Im Chat `/fern 5832 7194`, danach die Aufträge als normale Nachricht, am Ende `/fern ende`. Im Terminal geht dasselbe mit `fern <ID>`.
+
 Kundensitzungen laufen in einem eigenen Claude-Profil ohne eingebaute Werkzeuge und ohne die sonstigen Anschlüsse, Regeln und Erinnerungen.
+
+## Verwaltung: Techniker freischalten und entfernen (auf dem Server)
+
+```bash
+sh /docker/smg-fern/techniker-ssh.sh hinzu kai 'ssh-ed25519 AAAA… smg-fern-kai'      # SSH-Zugang, nur Weiterleitung
+cd /docker/smg-fern && docker compose exec -T fern python dienst.py techniker-neu kai wartung   # gibt den Techniker-Schlüssel einmal aus
+docker compose exec -T fern python dienst.py techniker                                # Liste
+sh /docker/smg-fern/techniker-ssh.sh weg kai && docker compose exec -T fern python dienst.py techniker-entfernen kai
+```
+
+Rollen: `wartung` darf Sitzungen übernehmen und warten. `verwaltung` darf zusätzlich Geräte anlegen, sperren und das Protokoll lesen.
 
 ## Werkstatt: ein Set einrichten
 
