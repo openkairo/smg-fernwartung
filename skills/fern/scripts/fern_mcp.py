@@ -51,6 +51,31 @@ def backup(name):
     return False, f"Backup „{name}“ ist angelegt (vollständig, unverschlüsselt, ohne Passwort)."
 
 
+SHELL = {
+    "name": "shell",
+    "description": "Führt einen Shell-Befehl auf dem Gerät des Kunden aus, im Container der Fernwartungs-App (Debian). "
+                   "Arbeitsverzeichnis ist /homeassistant, das Konfigurationsverzeichnis von Home Assistant "
+                   "(configuration.yaml, custom_components, www, .storage). /share ist der geteilte Ordner. "
+                   "Vorhanden sind u. a. cat, grep, sed, tee, jq, curl und die Kommandozeile `ha` "
+                   "(z. B. `ha core check`, `ha core logs`, `ha core restart`). Es ist NICHT das Betriebssystem "
+                   "des Geräts selbst. Für Dashboards, Automationen und Entitäten weiter die Werkzeuge von „kunde“ nehmen.",
+    "inputSchema": {"type": "object", "required": ["befehl"], "properties": {
+        "befehl": {"type": "string", "description": "Der Befehl, wie er in sh -c ausgeführt wird"},
+        "zeitlimit": {"type": "integer", "description": "Sekunden bis zum Abbruch, Vorgabe 60, höchstens 600"}}},
+}
+
+
+def shell(argumente):
+    try:
+        a = kunde(3, "fern/shell", {"befehl": argumente.get("befehl", ""), "zeitlimit": argumente.get("zeitlimit")})
+    except Exception as e:
+        return True, f"Befehl nicht bestätigt ({type(e).__name__}). Nicht blind wiederholen, erst den Stand prüfen."
+    if "result" not in a or "exit" not in a["result"]:
+        return True, "Dieses Gerät kennt den Shell-Zugriff nicht (App älter als 0.3.0?)."
+    r = a["result"]
+    return r["exit"] != 0, f"[exit {r['exit']}]\n{r['ausgabe']}"
+
+
 def antworten(nr, ergebnis):
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": nr, "result": ergebnis}) + "\n")
     sys.stdout.flush()
@@ -68,9 +93,12 @@ for zeile in sys.stdin:
         antworten(nr, {"protocolVersion": m.get("params", {}).get("protocolVersion", "2025-06-18"),
                        "capabilities": {"tools": {}}, "serverInfo": {"name": "fern", "version": "1"}})
     elif methode == "tools/list":
-        antworten(nr, {"tools": [WERKZEUG]})
+        antworten(nr, {"tools": [WERKZEUG, SHELL]})
     elif methode == "tools/call" and m.get("params", {}).get("name") == "backup_starten":
         fehler, text = backup(m["params"].get("arguments", {}).get("name"))
+        antworten(nr, {"content": [{"type": "text", "text": text}], "isError": fehler})
+    elif methode == "tools/call" and m.get("params", {}).get("name") == "shell":
+        fehler, text = shell(m["params"].get("arguments", {}))
         antworten(nr, {"content": [{"type": "text", "text": text}], "isError": fehler})
     elif methode == "ping":
         antworten(nr, {})

@@ -35,6 +35,7 @@ def mcp_attrappe(name, merker):
     async def post(request):
         merker["kopf"] = {k.lower(): v for k, v in request.headers.items()}
         m = await request.json()
+        merker["letzte"] = m
         methode = m.get("method")
         if methode == "initialize":
             return web.json_response({"jsonrpc": "2.0", "id": m["id"], "result": {"protocolVersion": "2025-06-18"}},
@@ -191,6 +192,21 @@ async def haupt():
         pruefe("Sitzungskennung mit anderem Techniker: kein Zugriff", (await zweiter.mcp(sitzung1, "echo", {"wert": 1}))[0] == 410)
         pruefe("Andere Pfade gibt es nicht", (await robert.ruf("POST", f"/s/{sitzung1}/anderes", json={}))[0] == 404)
         pruefe("Andere Methoden abgelehnt", (await robert.ruf("PUT", f"/s/{sitzung1}/mcp", json={}))[0] == 405)
+
+        print("Befehle des Technikers")
+        fernwartung.SHELL_ORDNER = tmp
+        status, j, _ = await robert.mcp(sitzung1, "fern/shell", {"befehl": "echo hallo > probe.txt && cat probe.txt && pwd"})
+        pruefe("Befehl läuft im Konfigurationsordner des Geräts", status == 200 and j["result"]["exit"] == 0
+               and j["result"]["ausgabe"].startswith("hallo\n") and os.path.realpath(tmp) in j["result"]["ausgabe"], str(j))
+        status, j, _ = await robert.mcp(sitzung1, "fern/shell", {"befehl": "ls /gibt-es-nicht"})
+        pruefe("Fehlschlag kommt mit Exit-Code und Fehlertext zurück", j["result"]["exit"] != 0 and "gibt-es-nicht" in j["result"]["ausgabe"], str(j))
+        status, j, _ = await robert.mcp(sitzung1, "fern/shell", {"befehl": "sleep 30", "zeitlimit": 1})
+        pruefe("Zeitlimit bricht einen hängenden Befehl ab", j["result"]["exit"] != 0 and "abgebrochen" in j["result"]["ausgabe"], str(j))
+        pruefe("Befehle erreichen HA-MCP nicht, die App fängt sie ab", (merker_a.get("letzte") or {}).get("method") != "fern/shell")
+        app_a_obj["fern"].opt["shell"] = False
+        status, j, _ = await robert.mcp(sitzung1, "fern/shell", {"befehl": "echo x"})
+        pruefe("In der App abgeschaltet: nichts wird ausgeführt", j["result"]["exit"] == 126 and "abgeschaltet" in j["result"]["ausgabe"], str(j))
+        app_a_obj["fern"].opt["shell"] = True
 
         zeiten = []
         beginn = time.monotonic()

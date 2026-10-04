@@ -1,7 +1,7 @@
 {
   "name": "fern",
   "displayName": "SMG Fernwartung",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Fernwartung für Home-Assistant-Sets von SolarModule Gladbeck: Der Kunde nennt eine ID, der Techniker arbeitet über Claude auf dessen Home Assistant.",
   "author": { "name": "SolarModule Gladbeck" },
   "repository": "https://github.com/openkairo/smg-fernwartung",

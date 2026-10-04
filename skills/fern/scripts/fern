@@ -264,6 +264,15 @@ def lesende_werkzeuge(k, url):
 
 
 BACKUP_WERKZEUG = "mcp__fern__backup_starten"
+FERN_WERKZEUGE = ("shell", "backup_starten")  # Werkzeuge des eigenen Anschlusses „fern“, alles andere gehört zu „kunde“
+
+
+def voller_name(name):
+    return ("mcp__fern__" if name in FERN_WERKZEUGE else "mcp__kunde__") + name
+
+
+def kurzer_name(name):
+    return str(name).replace("mcp__kunde__", "").replace("mcp__fern__", "")
 
 
 def mcp_konfig(k, url):
@@ -283,9 +292,9 @@ def claude_befehl(k, mcp_datei, erlaubt=(), alle=False):
               "--no-chrome", "--permission-mode", "manual"]
     # Das Backup ohne Passwort darf immer ohne Rückfrage laufen
     if alle:
-        befehl += ["--allowedTools", "mcp__kunde," + BACKUP_WERKZEUG]
+        befehl += ["--allowedTools", "mcp__kunde,mcp__fern"]
     else:
-        befehl += ["--allowedTools", ",".join(["mcp__kunde__" + name for name in erlaubt] + [BACKUP_WERKZEUG])]
+        befehl += ["--allowedTools", ",".join([voller_name(name) for name in erlaubt] + [BACKUP_WERKZEUG])]
     if os.path.exists(REGELN):
         with open(REGELN) as f:
             befehl += ["--append-system-prompt", f.read()]
@@ -493,7 +502,7 @@ def chat_frag(k, argumente):
         elif argumente[1] == "alle":
             z["schreiben"] = True
         else:
-            einmal = [w.replace("mcp__kunde__", "") for w in argumente[1].split(",") if w]
+            einmal = [kurzer_name(w) for w in argumente[1].split(",") if w]
         argumente = argumente[2:]
     auftrag = " ".join(argumente).strip()
     if not auftrag:
@@ -527,7 +536,7 @@ def chat_frag(k, argumente):
         print("\n--- FREIGABE NÖTIG: Diese Aufrufe wurden nicht ausgeführt ---")
         gesehen = set()
         for a in abgelehnt:
-            name = str(a.get("tool_name", "")).replace("mcp__kunde__", "")
+            name = kurzer_name(a.get("tool_name", ""))
             eingabe = json.dumps(a.get("tool_input", {}), ensure_ascii=False)
             if (name, eingabe) in gesehen:
                 continue

@@ -1,5 +1,8 @@
 # Änderungen
 
+## 0.3.0
+- Der Techniker kann während der Fernwartung Befehle auf dem Gerät ausführen und Konfigurationsdateien bearbeiten, zum Beispiel zur Fehlersuche. In den Einstellungen der App abschaltbar (`shell`).
+
 ## 0.2.2
 - Verständlicher Hinweis, wenn die Fernwartung wegen Untätigkeit des Technikers beendet wurde.
 - Restzeit ohne doppelten Punkt.

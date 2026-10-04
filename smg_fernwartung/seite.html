@@ -72,7 +72,7 @@
     if (s.hinweis) { absatz(s.hinweis); }
     if (s.zustand === 'aus') {
       absatz('Bitte erstellen Sie vor dem Einschalten ein Backup (Einstellungen → System → Sicherungen).');
-      absatz('Mit dem Einschalten erlauben Sie unserem Support für höchstens 3 Stunden den Zugriff auf Ihr Home Assistant. Sie können jederzeit beenden.', 'leise');
+      absatz('Mit dem Einschalten erlauben Sie unserem Support für höchstens 3 Stunden den Zugriff auf Ihr Home Assistant einschließlich der Konfigurationsdateien. Sie können jederzeit beenden.', 'leise');
     }
     knopf.hidden = false;
     knopf.disabled = s.zustand === 'verbindet';

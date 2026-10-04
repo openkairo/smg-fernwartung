@@ -1,5 +1,5 @@
 name: SMG Fernwartung
-version: "0.2.2"
+version: "0.3.0"
 slug: smg_fernwartung
 description: Zeitlich begrenzte Fernwartung auf Knopfdruck
 arch:
@@ -10,6 +10,14 @@ init: false
 homeassistant_api: true
 hassio_api: true
 hassio_role: manager
+# Für Befehle des Technikers im Fehlerfall: Konfiguration von Home Assistant und der geteilte Ordner
+map:
+  - type: homeassistant_config
+    read_only: false
+  - type: share
+    read_only: false
+  - type: ssl
+    read_only: true
 boot: auto
 ingress: true
 ingress_port: 8099
@@ -19,9 +27,11 @@ options:
   geraetekennung: ""
   geraeteschluessel: ""
   dienst_url: wss://fern.wattrebellen.de/geraet
+  shell: true
 schema:
   geraetekennung: str
   geraeteschluessel: password
   mcp_url: password?
   mcp_token: password?
   dienst_url: str
+  shell: bool?

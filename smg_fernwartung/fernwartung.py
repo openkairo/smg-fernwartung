@@ -25,6 +25,9 @@ NUR_INGRESS = os.environ.get("FERN_OHNE_INGRESS_PRUEFUNG") != "1"
 
 MCP_PORT = int(os.environ.get("FERN_MCP_PORT", "9584"))
 MCP_START_S = float(os.environ.get("FERN_MCP_START_S", "150"))
+# Befehle des Technikers laufen im Container dieser App; Arbeitsverzeichnis ist die HA-Konfiguration
+SHELL_ORDNER = os.environ.get("FERN_SHELL_ORDNER", "/homeassistant")
+SHELL_MAX_AUSGABE = 200 * 1024
 MAX_RAHMEN = 256 * 1024
 TEIL_BYTES = 48 * 1024
 METHODEN = ("POST", "GET", "DELETE")
@@ -242,6 +245,39 @@ class Fernwartung:
                 pass
             await ws.close()
 
+    async def shell(self, parameter):
+        """Führt einen Befehl des Technikers im Container dieser App aus (HA-Konfiguration unter /homeassistant).
+
+        Nur während einer eingeschalteten Fernwartung erreichbar, über die Einstellung `shell` abschaltbar.
+        """
+        if not self.opt.get("shell", True):
+            return {"exit": 126, "ausgabe": "Der Shell-Zugriff ist auf diesem Gerät abgeschaltet (Einstellung der App)."}
+        befehl = str(parameter.get("befehl", "")).strip()
+        if not befehl:
+            return {"exit": 2, "ausgabe": "Kein Befehl angegeben."}
+        zeitlimit = max(1, min(int(parameter.get("zeitlimit") or 60), 600))
+        prozess = await asyncio.create_subprocess_shell(
+            befehl, cwd=SHELL_ORDNER if os.path.isdir(SHELL_ORDNER) else None, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+        log.info("Shell-Befehl des Technikers gestartet (%d Zeichen)", len(befehl))
+        hinweis = ""
+        try:
+            try:
+                roh, _ = await asyncio.wait_for(prozess.communicate(), zeitlimit)
+            except asyncio.TimeoutError:
+                roh, hinweis = b"", f"\n[nach {zeitlimit} Sekunden abgebrochen]"
+        finally:
+            if prozess.returncode is None:
+                try:
+                    os.killpg(prozess.pid, 9)
+                except OSError:
+                    pass
+        text = roh.decode(errors="replace")
+        if len(text) > SHELL_MAX_AUSGABE:
+            halb = SHELL_MAX_AUSGABE // 2
+            text = text[:halb] + f"\n[… {len(text) - SHELL_MAX_AUSGABE} Zeichen ausgelassen …]\n" + text[-halb:]
+        return {"exit": prozess.returncode if prozess.returncode is not None else 124, "ausgabe": text + hinweis}
+
     async def anfrage(self, http, senden, m):
         """Eine Anfrage an den festen MCP-Endpunkt reichen und die Antwort stückweise zurückschicken."""
         nr = m["nr"]
@@ -251,6 +287,22 @@ class Fernwartung:
                 return
             kopf = self.mcp_kopf({k: v for k, v in m.get("kopf", {}).items() if k.lower() in KOPF_HIN})
             koerper = base64.b64decode(m.get("koerper", ""))
+            # Eigene Methode der Fernwartung: wird hier ausgeführt, nicht an HA-MCP gereicht
+            if m["methode"] == "POST" and b'"fern/shell"' in koerper[:300]:
+                try:
+                    auftrag = json.loads(koerper)
+                except Exception:
+                    auftrag = {}
+                if auftrag.get("method") == "fern/shell":
+                    ergebnis = await self.shell(auftrag.get("params") or {})
+                    daten = json.dumps({"jsonrpc": "2.0", "id": auftrag.get("id"), "result": ergebnis}).encode()
+                    await senden({"typ": "antwort", "nr": nr, "status": 200,
+                                  "kopf": {"content-type": "application/json"}})
+                    for i in range(0, len(daten), TEIL_BYTES):
+                        await senden({"typ": "teil", "nr": nr,
+                                      "daten": base64.b64encode(daten[i:i + TEIL_BYTES]).decode()})
+                    await senden({"typ": "ende", "nr": nr})
+                    return
             async with http.request(m["methode"], self.mcp_url, headers=kopf, data=koerper or None,
                                     allow_redirects=False,
                                     timeout=aiohttp.ClientTimeout(total=None, sock_connect=10)) as r:
