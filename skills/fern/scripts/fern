@@ -123,8 +123,19 @@ def schluessel_eintragen():
 
 
 def verlinken():
-    """Hält ~/.local/bin/fern auf dieses Skript gerichtet (der Pfad ändert sich bei Plugin-Updates)."""
+    """Hält ~/.local/bin/fern auf den aktuellen Stand des Skripts gerichtet.
+
+    Läuft dieses Skript aus einem versionierten Plugin-Zwischenspeicher, zeigt der Verweis stattdessen auf
+    die Plugin-Quelle (`plugins/marketplaces/…`), die bei jedem Plugin-Update mitgezogen wird. Sonst bliebe
+    der Verweis nach einem Update auf der alten Version hängen.
+    """
     ziel = os.path.realpath(__file__)
+    if "/plugins/cache/" in ziel:
+        basis, rest = ziel.split("/plugins/cache/", 1)
+        teile = rest.split("/")  # <quelle>/<plugin>/<version>/skills/fern/scripts/fern
+        quelle = os.path.join(basis, "plugins", "marketplaces", teile[0], *teile[3:])
+        if os.path.exists(quelle):
+            ziel = quelle
     link = os.path.expanduser("~/.local/bin/fern")
     try:
         if os.path.islink(link) and os.path.realpath(link) == ziel:
