@@ -12,7 +12,8 @@
   fern sperren <Gerät>      Gerät sperren (Seriennummer oder Gerätekennung), laufende Sitzung endet sofort
   fern geraete              Geräteliste
   fern protokoll            letzte Sitzungen
-  fern einrichten           Konfiguration anlegen und prüfen
+  fern einrichten           Ersteinrichtung auf diesem Rechner (SSH-Schlüssel, Konfiguration, Hinweise)
+  fern schluessel           Techniker-Schlüssel eintragen (wird verdeckt abgefragt)
 
 Geheime Daten liegen in ~/.config/smg-fern/ (Verzeichnis 700, Dateien 600), nie im Vault.
 """
@@ -38,8 +39,8 @@ PROFIL = os.path.join(ORDNER, "claude-profil")
 CHAT = os.path.join(ORDNER, "chat")
 REGELN = os.path.join(os.path.dirname(os.path.realpath(__file__)), "kundensitzung.md")
 VORLAGE = {
-    "ssh_ziel": "root@SERVER",
-    "ssh_schluessel": "~/.ssh/id_ed25519_hostinger",
+    "ssh_ziel": "fern@fern.wattrebellen.de",
+    "ssh_schluessel": "~/.config/smg-fern/ssh_schluessel",
     "techniker_port": 8811,
     "techniker_schluessel": "",
     "claude": "claude",
@@ -73,13 +74,66 @@ def einrichten():
     if not os.path.exists(KONFIG):
         with open(os.open(KONFIG, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
             json.dump(VORLAGE, f, indent=2)
-        print(f"Angelegt: {KONFIG}\nBitte ssh_ziel und techniker_schluessel eintragen.")
+        print(f"Angelegt: {KONFIG}")
     else:
         os.chmod(KONFIG, 0o600)
         print(f"Vorhanden: {KONFIG} (Rechte geprüft)")
+    with open(KONFIG) as f:
+        k = {**VORLAGE, **json.load(f)}
+    schluessel = os.path.expanduser(k["ssh_schluessel"])
+    if not os.path.exists(schluessel) and schluessel.startswith(ORDNER):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "smg-fern-" + (os.environ.get("USER") or "techniker"),
+                        "-f", schluessel], check=True)
     os.makedirs(PROFIL, mode=0o700, exist_ok=True)
-    print(f"Claude-Profil für Kundensitzungen: {PROFIL}\n"
-          f"Einmal anmelden mit:  CLAUDE_CONFIG_DIR='{PROFIL}' claude auth login")
+    schritt = 1
+    if os.path.exists(schluessel + ".pub") and not k["techniker_schluessel"]:
+        with open(schluessel + ".pub") as f:
+            print(f"\n{schritt}. Diesen öffentlichen SSH-Schlüssel an Robert schicken (er ist nicht geheim):\n\n   {f.read().strip()}\n")
+        schritt += 1
+    if not k["techniker_schluessel"]:
+        print(f"{schritt}. Den Techniker-Schlüssel, den Robert zurückgibt, im Terminal eintragen:  fern schluessel")
+        schritt += 1
+    print(f"{schritt}. Claude-Profil für Kundensitzungen einmal im Terminal anmelden (hält rund vier Wochen):\n"
+          f"   CLAUDE_CONFIG_DIR='{PROFIL}' claude auth login")
+    print("\nDanach: /fern <ID> im Chat oder fern <ID> im Terminal.")
+
+
+def schluessel_eintragen():
+    import getpass
+    if not os.path.exists(KONFIG):
+        ende("Bitte zuerst: fern einrichten")
+    wert = (getpass.getpass("Techniker-Schlüssel: ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
+    if len(wert) < 40:
+        ende("Das sieht nicht nach einem Techniker-Schlüssel aus.")
+    with open(KONFIG) as f:
+        k = json.load(f)
+    k["techniker_schluessel"] = wert
+    with open(os.open(KONFIG, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump(k, f, indent=2)
+    k = {**VORLAGE, **k}
+    v = Verbindung(k)
+    try:
+        status, j = v.ruf("POST", "/uebernahme/beginn", {"id": "00000000"})
+    finally:
+        v.schliessen()
+    print("Eingetragen. Verbindung und Schlüssel sind in Ordnung." if status == 404
+          else f"Eingetragen, aber der Dienst antwortet mit {status}: {j.get('fehler', '')}")
+
+
+def verlinken():
+    """Hält ~/.local/bin/fern auf dieses Skript gerichtet (der Pfad ändert sich bei Plugin-Updates)."""
+    ziel = os.path.realpath(__file__)
+    link = os.path.expanduser("~/.local/bin/fern")
+    try:
+        if os.path.islink(link) and os.path.realpath(link) == ziel:
+            return
+        if os.path.islink(link) or not os.path.exists(link):
+            os.makedirs(os.path.dirname(link), exist_ok=True)
+            if os.path.islink(link):
+                os.remove(link)
+            os.symlink(ziel, link)
+    except OSError:
+        pass
 
 
 def freier_port():
@@ -101,6 +155,7 @@ class Verbindung:
         self.basis = f"http://127.0.0.1:{port}"
         self.prozess = subprocess.Popen(
             ["ssh", "-N", "-o", "ExitOnForwardFailure=yes", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15",
+             "-o", "StrictHostKeyChecking=accept-new", "-o", "IdentitiesOnly=yes",
              "-i", os.path.expanduser(k["ssh_schluessel"]),
              "-L", f"127.0.0.1:{port}:127.0.0.1:{k['techniker_port']}", k["ssh_ziel"]],
             stdin=subprocess.DEVNULL, start_new_session=abgekoppelt,
@@ -163,11 +218,15 @@ def verwaltung(k, befehl, argumente):
             print("Gesperrt." + (" Die laufende Sitzung wurde beendet." if j["sitzung_beendet"] else ""))
         elif befehl == "geraete":
             status, j = v.ruf("GET", "/geraete")
+            if status != 200:
+                ende(j.get("fehler", f"Fehler {status}"))
             for g in j:
                 print(f"{g['seriennummer']:<20} {g['kennung']}  "
                       f"{'gesperrt' if g['gesperrt'] else 'aktiv':<9} {'verbunden' if g['verbunden'] else ''}")
         elif befehl == "protokoll":
             status, j = v.ruf("GET", "/protokoll")
+            if status != 200:
+                ende(j.get("fehler", f"Fehler {status}"))
             for p in j:
                 print(f"{p['beginn']}  bis {p['ende'] or 'läuft':<19}  {p['geraet']}  "
                       f"{p['techniker'] or '-':<10} {p['grund'] or ''}")
@@ -560,8 +619,12 @@ def haupt():
     a = sys.argv[1:]
     if not a or a[0] in ("-h", "--help", "hilfe"):
         ende(__doc__, 0)
+    if not os.environ.get("FERN_ORDNER"):
+        verlinken()
     if a[0] == "einrichten":
         return einrichten()
+    if a[0] == "schluessel":
+        return schluessel_eintragen()
     k = konfig_laden()
     if a[0] in ("neu", "sperren") and len(a) == 2:
         verwaltung(k, a[0], a[1:])

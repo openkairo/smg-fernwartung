@@ -96,6 +96,9 @@ class Zustand:
                 ref TEXT PRIMARY KEY, geraet TEXT, techniker TEXT, beginn TEXT, ende TEXT, grund TEXT);
             """
         )
+        # Rolle je Techniker: "verwaltung" darf Geräte anlegen, sperren und das Protokoll lesen, "wartung" nur warten
+        if "rolle" not in [s[1] for s in self.db.execute("PRAGMA table_info(techniker)")]:
+            self.db.execute("ALTER TABLE techniker ADD COLUMN rolle TEXT DEFAULT 'verwaltung'")
         # Sitzungen überleben keinen Neustart
         self.db.execute("UPDATE protokoll SET ende=?, grund='dienst_neustart' WHERE ende IS NULL", (zeit(),))
         self.db.commit()
@@ -109,9 +112,8 @@ class Zustand:
     def geraet(self, wert):
         return self.db.execute("SELECT * FROM geraete WHERE kennung=? OR seriennummer=?", (wert, wert)).fetchone()
 
-    def techniker_name(self, schluessel):
-        zeile = self.db.execute("SELECT name FROM techniker WHERE schluessel_hash=?", (sha(schluessel),)).fetchone()
-        return zeile["name"] if zeile else None
+    def techniker(self, schluessel):
+        return self.db.execute("SELECT name, rolle FROM techniker WHERE schluessel_hash=?", (sha(schluessel),)).fetchone()
 
     def vermerk(self, geraet, grund):
         self.db.execute(
@@ -275,10 +277,12 @@ def fehler(status, text):
 async def techniker_pruefen(request, handler):
     z = request.app["zustand"]
     kopf = request.headers.get("Authorization", "")
-    name = z.techniker_name(kopf[7:]) if kopf.startswith("Bearer ") else None
-    if not name:
+    zeile = z.techniker(kopf[7:]) if kopf.startswith("Bearer ") else None
+    if not zeile:
         return fehler(401, "Techniker-Zugang fehlt oder ist ungültig")
-    request["techniker"] = name
+    request["techniker"] = zeile["name"]
+    if request.path.startswith(("/geraete", "/protokoll")) and zeile["rolle"] != "verwaltung":
+        return fehler(403, "Dieser Zugang darf warten, aber keine Geräte verwalten")
     return await handler(request)
 
 
@@ -496,13 +500,21 @@ async def starten(db_pfad=DB_PFAD, geraete_port=GERAETE_PORT, techniker_port=TEC
     return z, laeufer
 
 
-def techniker_neu(name):
+def techniker_neu(name, rolle="wartung"):
+    if rolle not in ("wartung", "verwaltung"):
+        raise SystemExit("Rolle: wartung oder verwaltung")
     z = Zustand(DB_PFAD)
     schluessel = secrets.token_urlsafe(32)
-    z.db.execute("INSERT OR REPLACE INTO techniker(name, schluessel_hash, angelegt) VALUES(?,?,?)",
-                 (name, sha(schluessel), zeit()))
+    z.db.execute("INSERT OR REPLACE INTO techniker(name, schluessel_hash, angelegt, rolle) VALUES(?,?,?,?)",
+                 (name, sha(schluessel), zeit(), rolle))
     z.db.commit()
     print(schluessel)
+
+
+def techniker_liste():
+    z = Zustand(DB_PFAD)
+    for r in z.db.execute("SELECT name, rolle, angelegt FROM techniker ORDER BY name"):
+        print(f"{r['name']:<16} {r['rolle']:<11} {r['angelegt']}")
 
 
 def techniker_entfernen(name):
@@ -519,11 +531,14 @@ async def _lauf():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     p = argparse.ArgumentParser()
-    p.add_argument("befehl", nargs="?", default="start", choices=["start", "techniker-neu", "techniker-entfernen"])
+    p.add_argument("befehl", nargs="?", default="start", choices=["start", "techniker-neu", "techniker-entfernen", "techniker"])
     p.add_argument("name", nargs="?")
+    p.add_argument("rolle", nargs="?", default="wartung")
     a = p.parse_args()
     if a.befehl == "techniker-neu":
-        techniker_neu(a.name)
+        techniker_neu(a.name, a.rolle)
+    elif a.befehl == "techniker":
+        techniker_liste()
     elif a.befehl == "techniker-entfernen":
         techniker_entfernen(a.name)
     else:

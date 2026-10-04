@@ -18,7 +18,7 @@ threading.Thread(target=lambda: mcp.run(transport="streamable-http"), daemon=Tru
 async def haupt():
     tmp = tempfile.mkdtemp()
     z, _ = await dienst.starten(tmp + "/db.sqlite3", 18200, 18201, "127.0.0.1")
-    z.db.execute("INSERT INTO techniker VALUES('robert',?,?)", (dienst.sha("tk"), dienst.zeit())); z.db.commit()
+    z.db.execute("INSERT INTO techniker(name, schluessel_hash, angelegt) VALUES('robert',?,?)", (dienst.sha("tk"), dienst.zeit())); z.db.commit()
     await asyncio.sleep(1.5)
     async with aiohttp.ClientSession() as http:
         t = Techniker.__new__(Techniker); t.http = http; t.kopf = {"Authorization": "Bearer tk"}

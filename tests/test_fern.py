@@ -10,7 +10,7 @@ import aiohttp
 async def haupt():
     tmp = tempfile.mkdtemp(); heim = os.path.join(tmp, "heim"); os.makedirs(heim + "/.config/smg-fern", 0o700)
     z, _ = await dienst.starten(tmp + "/db.sqlite3", 18100, 18101, "127.0.0.1")
-    z.db.execute("INSERT INTO techniker VALUES('robert',?,?)", (dienst.sha("tk"), dienst.zeit())); z.db.commit()
+    z.db.execute("INSERT INTO techniker(name, schluessel_hash, angelegt) VALUES('robert',?,?)", (dienst.sha("tk"), dienst.zeit())); z.db.commit()
     await starte(mcp_attrappe("A", {}), 18110)
     # Claude-Attrappe: schreibt ihre Aufrufdaten weg
     attrappe = tmp + "/claude"; open(attrappe, "w").write(
@@ -20,7 +20,7 @@ async def haupt():
     kp = heim + "/.config/smg-fern/config.json"; open(os.open(kp, os.O_WRONLY | os.O_CREAT, 0o600), "w").write(json.dumps(k))
     env = {**os.environ, "HOME": heim, "CLAUDE_GEERBT": "1", "ANTHROPIC_GEERBT": "1"}
     async def fern(*a):
-        p = await asyncio.create_subprocess_exec(W + "/mac/fern", *a, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p = await asyncio.create_subprocess_exec(W + "/skills/fern/scripts/fern", *a, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         aus, _ = await p.communicate(); return p.returncode, aus.decode()
     ok = []
     def pruefe(n, b, zus=""): ok.append(b); print(("  ok      " if b else "  FEHLER  ") + n + ("" if b else "  [" + str(zus)[:300] + "]"))

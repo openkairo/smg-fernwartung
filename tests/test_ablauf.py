@@ -129,7 +129,7 @@ async def haupt():
     dienst.DB_PFAD = db
     z, laeufer = await dienst.starten(db, P_GERAETE, P_TECH, "127.0.0.1")
     for name in ("robert", "zweiter"):
-        z.db.execute("INSERT INTO techniker VALUES(?,?,?)", (name, dienst.sha("schluessel-" + name), dienst.zeit()))
+        z.db.execute("INSERT INTO techniker(name, schluessel_hash, angelegt, rolle) VALUES(?,?,?,?)", (name, dienst.sha("schluessel-" + name), dienst.zeit(), "verwaltung" if name == "robert" else "wartung"))
     z.db.commit()
 
     merker_a, merker_b = {}, {}
@@ -148,6 +148,9 @@ async def haupt():
         status, gb, _ = await robert.ruf("POST", "/geraete", json={"seriennummer": "SMG-0002"})
         pruefe("Verwaltung ohne Schlüssel abgelehnt", (await ohne.ruf("GET", "/geraete"))[0] == 401)
         pruefe("Verwaltung mit falschem Schlüssel abgelehnt", (await fremder.ruf("GET", "/geraete"))[0] == 401)
+        pruefe("Rolle 'wartung' darf keine Geräte sehen, anlegen oder sperren und kein Protokoll lesen",
+               [(await zweiter.ruf("GET", "/geraete"))[0], (await zweiter.ruf("POST", "/geraete", json={"seriennummer": "X"}))[0],
+                (await zweiter.ruf("POST", "/geraete/SMG-0001/sperren"))[0], (await zweiter.ruf("GET", "/protokoll"))[0]] == [403] * 4)
 
         def optionen(g, mcp_port):
             return {"geraetekennung": g["kennung"], "geraeteschluessel": g["schluessel"],
@@ -361,7 +364,7 @@ async def haupt():
         pruefe("Falsche IDs werden gebremst", codes[-1] == 429 and codes[0] == 404, str(codes))
         z.db.execute("DELETE FROM techniker WHERE name='zweiter'")
         z.db.commit()
-        pruefe("Schlüsselentzug sperrt den Techniker sofort", (await zweiter.ruf("GET", "/geraete"))[0] == 401)
+        pruefe("Schlüsselentzug sperrt den Techniker sofort", (await zweiter.ruf("POST", "/uebernahme/beginn", json={"id": "1"}))[0] == 401)
 
         print("Neustart des Dienstes")
         status, gc, _ = await robert.ruf("POST", "/geraete", json={"seriennummer": "SMG-0003"})

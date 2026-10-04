@@ -36,9 +36,9 @@ docker compose exec fern python dienst.py techniker-neu robert   # gibt den Tech
 ## Mac
 
 ```bash
-mac/fern einrichten     # legt ~/.config/smg-fern/ an (700/600)
-mac/fern neu SMG-0001   # Werkstatt: Gerät anlegen
-mac/fern 5832 7194      # Kundensitzung
+fern einrichten     # legt ~/.config/smg-fern/ an (700/600)
+fern neu SMG-0001   # Werkstatt: Gerät anlegen
+fern 5832 7194      # Kundensitzung
 ```
 
 Kundensitzungen laufen in einem eigenen Claude-Profil ohne eingebaute Werkzeuge und ohne die sonstigen Anschlüsse, Regeln und Erinnerungen.
@@ -48,7 +48,7 @@ Kundensitzungen laufen in einem eigenen Claude-Profil ohne eingebaute Werkzeuge 
 1. HA OS installieren, Grundeinrichtung.
 2. App-Quelle hinzufügen: `https://github.com/openkairo/smg-fernwartung`.
 3. „SMG Fernwartung“ installieren, „In Seitenleiste anzeigen“ einschalten.
-4. `mac/fern neu <Seriennummer>` und die beiden Werte (Gerätekennung, Geräteschlüssel) in die Einstellungen der App eintragen.
-5. App starten, Probelauf: einschalten, `mac/fern <ID>`, ausschalten.
+4. `fern neu <Seriennummer>` und die beiden Werte (Gerätekennung, Geräteschlüssel) in die Einstellungen der App eintragen.
+5. App starten, Probelauf: einschalten, `fern <ID>`, ausschalten.
 
 Der MCP-Server (Paket `ha-mcp`, MIT-Lizenz) ist in die App eingebaut und läuft nur, solange die Fernwartung eingeschaltet ist. Eine getrennte HA-MCP-App wird nicht gebraucht.

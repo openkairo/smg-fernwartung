@@ -1,0 +1,12 @@
+{
+  "name": "smg-fernwartung",
+  "description": "Techniker-Werkzeug für die SMG Fernwartung",
+  "owner": { "name": "SolarModule Gladbeck" },
+  "plugins": [
+    {
+      "name": "fern",
+      "description": "Befehl /fern: Fernwartung auf dem Home Assistant eines Kunden, direkt im Chat",
+      "source": "./"
+    }
+  ]
+}
