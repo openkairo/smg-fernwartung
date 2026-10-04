@@ -91,7 +91,9 @@ def einrichten():
             print(f"\n{schritt}. Diesen öffentlichen SSH-Schlüssel an Robert schicken (er ist nicht geheim):\n\n   {f.read().strip()}\n")
         schritt += 1
     if not k["techniker_schluessel"]:
-        print(f"{schritt}. Den Techniker-Schlüssel, den Robert zurückgibt, im Terminal eintragen:  fern schluessel")
+        # Liegt ~/.local/bin nicht im Suchpfad, den vollen Pfad nennen
+        befehl = "fern" if shutil.which("fern") else f"'{os.path.expanduser('~/.local/bin/fern')}'"
+        print(f"{schritt}. Den Techniker-Schlüssel, den Robert zurückgibt, im Terminal eintragen:  {befehl} schluessel")
         schritt += 1
     print(f"{schritt}. Claude-Profil für Kundensitzungen einmal im Terminal anmelden (hält rund vier Wochen):\n"
           f"   CLAUDE_CONFIG_DIR='{PROFIL}' claude auth login")
