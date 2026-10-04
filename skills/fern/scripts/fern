@@ -40,7 +40,7 @@ CHAT = os.path.join(ORDNER, "chat")
 REGELN = os.path.join(os.path.dirname(os.path.realpath(__file__)), "kundensitzung.md")
 VORLAGE = {
     "ssh_ziel": "fern@fern.wattrebellen.de",
-    "ssh_schluessel": "~/.config/smg-fern/ssh_schluessel",
+    "ssh_schluessel": os.path.join(ORDNER, "ssh_schluessel"),
     "techniker_port": 8811,
     "techniker_schluessel": "",
     "claude": "claude",
